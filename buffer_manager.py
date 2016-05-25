@@ -1,8 +1,51 @@
+from abc import ABC, abstractmethod
 from datetime import datetime
 import heapq
 
 
-class FreeBlock:
+class AbstractBlock(ABC):
+    """This class is an Abstract Base Class (ABC)
+
+     it does nothing in itself other than specify the interface that
+     all concrete classes inherenting from it share
+
+    all these concrete classes form a state machine
+
+    because of my hackish way to implement the state machine,
+    beware NOT to apply class decorators or descriptors
+    to this class or all classes inherenting from it,
+    otherwise bizarre problems may occur"""
+
+    @abstractmethod
+    def read(self):
+        """read a block of data from memory"""
+
+    @abstractmethod
+    def write(self, data):
+        """write data into memory"""
+
+    @abstractmethod
+    def flush(self):
+        """write data from memory to file"""
+
+    @abstractmethod
+    def load(self, file, block_index):
+        """load a block of data into memory"""
+
+    @abstractmethod
+    def release(self):
+        """write data to file and detach with it"""
+
+    @abstractmethod
+    def pin(self):
+        """pin this block so that it cannot be released"""
+
+    @abstractmethod
+    def unpin(self):
+        """unpin this block so that it can be released"""
+
+
+class FreeBlock(AbstractBlock):
     state = 'free'
 
     def __init__(self, size):
@@ -22,9 +65,15 @@ class FreeBlock:
         self.file = file
         self.block_index = block_index
         self.file.seek(self.size * block_index)
+
+        # beware that the remaining data in the file may not be enough to fill the whole block!
+        # self.effective_bytes store how many bytes are really loaded into memory
         self.effective_bytes = self.file.readinto(self._memory)
+
         self.dirty = False
-        self.__class__ = OccupiedBlock
+
+        self.__class__ = OccupiedBlock  # change the class of the object
+        # it is a hackish way to implement a state machine, but it does work
 
     def release(self):
         raise RuntimeError('Trying to release a free block')
@@ -36,8 +85,9 @@ class FreeBlock:
         raise RuntimeError('Tring to unpin a free block')
 
 
-class OccupiedBlockBase:
+class OccupiedBlockBase(AbstractBlock):
     def read(self):
+        # update last accessed time to support LRU swap algorithm
         self.last_accessed_time = datetime.now()
         return self._memory[:self.effective_bytes]
 
@@ -85,6 +135,7 @@ class PinnedBlock(OccupiedBlockBase):
         self.__class__ = OccupiedBlock
 
 
+# this class is not finished yet
 class BufferManager:
     block_size = 4096
     total_blocks = 1024
