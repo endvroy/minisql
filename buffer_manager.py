@@ -7,13 +7,13 @@ class AbstractBlock(ABC):
     """This class is an Abstract Base Class (ABC)
 
      it does nothing in itself other than specify the interface that
-     all concrete classes inherenting from it share
+     all concrete classes inheriting from it share
 
     all these concrete classes form a state machine
 
     because of my hackish way to implement the state machine,
     beware NOT to apply class decorators or descriptors
-    to this class or all classes inherenting from it,
+    to this class or all classes inheriting from it,
     otherwise bizarre problems may occur"""
 
     @abstractmethod
@@ -79,10 +79,10 @@ class FreeBlock(AbstractBlock):
         raise RuntimeError('Trying to release a free block')
 
     def pin(self):
-        raise RuntimeError('Tring to pin a free block')
+        raise RuntimeError('Trying to pin a free block')
 
     def unpin(self):
-        raise RuntimeError('Tring to unpin a free block')
+        raise RuntimeError('Trying to unpin a free block')
 
 
 class OccupiedBlockBase(AbstractBlock):
