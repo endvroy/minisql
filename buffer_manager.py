@@ -148,6 +148,6 @@ class BufferManager:
 
     def get_file_block(self, file_path, block_index):
         free_block = self._find_free_block()
-        with open(file_path, 'rb') as file:
+        with open(file_path, 'r+b') as file:
             file.seek(block_index * self.block_size)
             file.readinto(free_block)
