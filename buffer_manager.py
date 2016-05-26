@@ -4,10 +4,10 @@ import os
 
 
 class Block:
-    def __init__(self, size, file, block_offset):
+    def __init__(self, size, file_path, block_offset):
         self.size = size
         self._memory = bytearray(size)
-        self.file = file
+        self.file = open(file_path, 'r+b')
         self.block_offset = block_offset
         self.file.seek(self.size * block_offset)
 
@@ -16,7 +16,7 @@ class Block:
         self.effective_bytes = self.file.readinto(self._memory)
 
         self.dirty = False
-        self.pinned = True
+        self.pin_count = 0
 
         self.last_accessed_time = datetime.now()
 
@@ -41,24 +41,24 @@ class Block:
             self.dirty = False
         self.last_accessed_time = datetime.now()
 
+    def pin(self):
+        """pin this block so that it cannot be released"""
+        self.pin_count += 1
+
+    def unpin(self):
+        """unpin this block so that it can be released"""
+        if self.pin_count > 0:
+            self.pin_count -= 1
+        else:
+            raise RuntimeError('this block is already unpinned')
+
     def release(self):
         """write data to file and become volatile"""
-        self.flush()
-        self.pinned = False
-
-    def _pin(self):
-        """pin this block so that it cannot be released"""
-        if self.pinned:
-            raise RuntimeError('Trying to pin an already pinned block')
+        if self.pin_count == 0:
+            self.flush()
+            self.file.close()
         else:
-            self.pinned = True
-
-    def _unpin(self):
-        """unpin this block so that it can be released"""
-        if self.pinned:
-            self.pinned = False
-        else:
-            raise RuntimeError('Trying to unpin an already unpinned block')
+            raise RuntimeError('Trying to release a pinned block')
 
 
 # this class is not finished yet
@@ -67,25 +67,24 @@ class BufferManager:
     total_blocks = 1024
 
     def __init__(self):
-        self.blocks = {}
+        self._blocks = {}
 
     def get_file_block(self, file_path, block_offset):
         abs_path = os.path.abspath(file_path)
-        if (abs_path, block_offset) in self.blocks:
+        if (abs_path, block_offset) in self._blocks:
             # found a cached block
-            return self.blocks[(abs_path, block_offset)]
-        elif len(self.blocks) < self.total_blocks:
+            return self._blocks[(abs_path, block_offset)]
+        elif len(self._blocks) < self.total_blocks:
             # has free space
-            with open(abs_path, 'r+b') as file:
-                block = Block(self.block_size, file, block_offset)
-                self.blocks[(abs_path, block_offset)] = block
-                return block
+            block = Block(self.block_size, abs_path, block_offset)
+            self._blocks[(abs_path, block_offset)] = block
+            return block
         else:
             # buffer is full; try to swap out the lru block
             lru_key = None
             lru_block = None
-            for key, block in self.blocks.items():
-                if not block.pinned:
+            for key, block in self._blocks.items():
+                if block.pin_count == 0:
                     if lru_block is None or block.last_accessed_time < lru_block.last_accessed_time:
                         lru_key = key
                         lru_block = block
@@ -93,8 +92,16 @@ class BufferManager:
                 raise RuntimeError('All blocks are pinned, buffer ran out of blocks')
             else:
                 lru_block.release()
-                del self.blocks[lru_key]
-                with open(abs_path, 'r+b') as file:
-                    block = Block(self.block_size, file, block_offset)
-                    self.blocks[(abs_path, block_offset)] = block
-                    return block
+                del self._blocks[lru_key]
+                block = Block(self.block_size, abs_path, block_offset)
+                self._blocks[(abs_path, block_offset)] = block
+                return block
+
+    def flush_all(self):
+        for block in self._blocks:
+            block.flush()
+
+    def free(self):
+        for block in self._blocks.values():
+            block.pin_count = 0
+            block.release()
