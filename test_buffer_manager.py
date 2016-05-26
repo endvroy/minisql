@@ -25,10 +25,10 @@ class TestBlock(unittest.TestCase):
         block.pin()
         self.assertEqual(block.pin_count, 1)  # test
         with self.assertRaises(RuntimeError):
-            block.release()
+            block.free()
         block.unpin()
         self.assertEqual(block.pin_count, 0)  # test that release unpins the block
-        block.release()
+        block.free()
         self.assertTrue(block.file.closed)  # test that release doesn't close the file
 
     def test_partial_read(self):
@@ -38,7 +38,7 @@ class TestBlock(unittest.TestCase):
         self.assertEqual(block.read(), b'd')
         block.write(b'D')
         self.assertEqual(block.read(), b'D')
-        block.release()
+        block.free()
         with open('foo', 'rb') as file:
             self.assertEqual(file.read(), b'Hello WorlD')
 

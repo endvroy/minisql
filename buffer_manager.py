@@ -52,8 +52,8 @@ class Block:
         else:
             raise RuntimeError('this block is already unpinned')
 
-    def release(self):
-        """write data to file and become volatile"""
+    def free(self):
+        """write data to file and close related file"""
         if self.pin_count == 0:
             self.flush()
             self.file.close()
@@ -91,7 +91,7 @@ class BufferManager:
             if lru_block is None:
                 raise RuntimeError('All blocks are pinned, buffer ran out of blocks')
             else:
-                lru_block.release()
+                lru_block.free()
                 del self._blocks[lru_key]
                 block = Block(self.block_size, abs_path, block_offset)
                 self._blocks[(abs_path, block_offset)] = block
@@ -104,4 +104,4 @@ class BufferManager:
     def free(self):
         for block in self._blocks.values():
             block.pin_count = 0
-            block.release()
+            block.free()
