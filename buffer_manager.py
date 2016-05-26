@@ -58,7 +58,7 @@ class Block:
             self.flush()
             self.file.close()
         else:
-            raise RuntimeError('Trying to release a pinned block')
+            raise RuntimeError('Trying to free a pinned block')
 
 
 # this class is not finished yet
