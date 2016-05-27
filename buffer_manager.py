@@ -52,20 +52,19 @@ class Block:
         else:
             raise RuntimeError('this block is already unpinned')
 
-    def free(self):
-        """write data to file and close related file"""
-        if self.pin_count == 0:
-            self.flush()
-        else:
-            raise RuntimeError('Trying to free a pinned block')
+    # def free(self):
+    #     """write data to file and close related file"""
+    #     if self.pin_count == 0:
+    #         self.flush()
+    #     else:
+    #         raise RuntimeError('Trying to free a pinned block')
 
 
-# this class is not finished yet
 class BufferManager:
     block_size = 4096
-    total_blocks = 1024
 
-    def __init__(self):
+    def __init__(self, total_blocks=1024):
+        self.total_blocks = total_blocks
         self._blocks = {}
 
     def get_file_block(self, file_path, block_offset):
@@ -90,7 +89,7 @@ class BufferManager:
             if lru_block is None:
                 raise RuntimeError('All blocks are pinned, buffer ran out of blocks')
             else:
-                lru_block.free()
+                lru_block.flush()
                 del self._blocks[lru_key]
                 block = Block(self.block_size, abs_path, block_offset)
                 self._blocks[(abs_path, block_offset)] = block
@@ -100,7 +99,7 @@ class BufferManager:
         for block in self._blocks:
             block.flush()
 
-    def free(self):
-        for block in self._blocks.values():
-            block.pin_count = 0
-            block.free()
+    # def free(self):
+    #     for block in self._blocks.values():
+    #         block.pin_count = 0
+    #         block.free()
