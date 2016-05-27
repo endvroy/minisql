@@ -1,5 +1,4 @@
 from datetime import datetime
-import heapq
 import os
 
 
@@ -7,13 +6,13 @@ class Block:
     def __init__(self, size, file_path, block_offset):
         self.size = size
         self._memory = bytearray(size)
-        self.file = open(file_path, 'r+b')
+        self.file_path = os.path.abspath(file_path)
         self.block_offset = block_offset
-        self.file.seek(self.size * block_offset)
-
-        # beware that the remaining data in the file may not be enough to fill the whole block!
-        # self.effective_bytes store how many bytes are really loaded into memory
-        self.effective_bytes = self.file.readinto(self._memory)
+        with open(file_path, 'r+b') as file:
+            file.seek(self.size * block_offset)
+            # beware that the remaining data in the file may not be enough to fill the whole block!
+            # self.effective_bytes store how many bytes are really loaded into memory
+            self.effective_bytes = file.readinto(self._memory)
 
         self.dirty = False
         self.pin_count = 0
@@ -35,9 +34,10 @@ class Block:
     def flush(self):
         """write data from memory to file"""
         if self.dirty:
-            self.file.seek(self.block_offset * self.size)
-            self.file.write(self._memory[:self.effective_bytes])
-            self.file.flush()
+            with open(self.file_path, 'r+b') as file:
+                file.seek(self.block_offset * self.size)
+                file.write(self._memory[:self.effective_bytes])
+                file.flush()
             self.dirty = False
         self.last_accessed_time = datetime.now()
 
@@ -56,7 +56,6 @@ class Block:
         """write data to file and close related file"""
         if self.pin_count == 0:
             self.flush()
-            self.file.close()
         else:
             raise RuntimeError('Trying to free a pinned block')
 

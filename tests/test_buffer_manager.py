@@ -23,13 +23,12 @@ class TestBlock(unittest.TestCase):
         with open('foo', 'rb') as f:
             self.assertEqual(f.read(), b'abcde World')  # test flush writes back to file
         block.pin()
-        self.assertEqual(block.pin_count, 1)  # test
-        with self.assertRaises(RuntimeError):
+        self.assertEqual(block.pin_count, 1)  # test pin increases pin count
+        with self.assertRaises(RuntimeError):  # test pinned block cannot be freed
             block.free()
         block.unpin()
-        self.assertEqual(block.pin_count, 0)  # test that release unpins the block
+        self.assertEqual(block.pin_count, 0)  # test that unpin increases pin count
         block.free()
-        self.assertTrue(block.file.closed)  # test that release doesn't close the file
 
     def test_partial_read(self):
         prepare_file()
@@ -57,7 +56,7 @@ class TestBufferManager(unittest.TestCase):
 
         b = manager.get_file_block('foo', 1)
         b.pin()
-        time.sleep(1)
+        time.sleep(0.5)
         self.assertEqual(b.read(), b' Worl')
         with self.assertRaises(RuntimeError):
             c = manager.get_file_block('foo', 2)  # test buffer run out of space
