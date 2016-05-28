@@ -76,7 +76,6 @@ class TestBufferManager(unittest.TestCase):
         b = manager.get_file_block('./foo', 0)
         self.assertTrue(a is b)  # test cache hit
         a.write(b'hello')
-        a.flush()
 
         b = manager.get_file_block('foo', 1)
         b.pin()
