@@ -8,7 +8,8 @@ class Block:
         self._memory = bytearray(size)
         self.file_path = os.path.abspath(file_path)
         self.block_offset = block_offset
-        with open(file_path, 'w+b') as file:
+        mode = 'r+b' if os.path.exists(file_path) else 'w+b'
+        with open(file_path, mode) as file:
             file.seek(self.size * block_offset)
             # beware that the remaining data in the file may not be enough to fill the whole block!
             # self.effective_bytes store how many bytes are really loaded into memory
@@ -102,7 +103,7 @@ class BufferManager:
                 return block
 
     def flush_all(self):
-        for block in self._blocks:
+        for block in self._blocks.values():
             block.flush()
 
             # def free(self):
