@@ -30,7 +30,7 @@ class Block:
         data_size = len(data)
         if data_size > self.size:
             if not trunc:
-                raise RuntimeError('data size({}) is larger than block size({})'.format(data_size, self.size))
+                raise RuntimeError('data size({}B) is larger than block size({}B)'.format(data_size, self.size))
         self.effective_bytes = min(data_size, self.size)
         self._memory.clear()
         self._memory[:self.effective_bytes] = data

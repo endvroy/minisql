@@ -75,6 +75,8 @@ class TestBufferManager(unittest.TestCase):
         self.assertEqual(a.read(), b'Hello')
         b = manager.get_file_block('./foo', 0)
         self.assertTrue(a is b)  # test cache hit
+        a.write(b'hello')
+        a.flush()
 
         b = manager.get_file_block('foo', 1)
         b.pin()
@@ -87,7 +89,8 @@ class TestBufferManager(unittest.TestCase):
         c = manager.get_file_block('foo', 2)  # test lru swap
         self.assertFalse((os.path.abspath('foo'), 0) in manager._blocks.keys())  # a should be swapped out
         self.assertTrue((os.path.abspath('foo'), 1) in manager._blocks.keys())  # b should remain in the buffer
-        # manager.free()
+        with open('foo', 'rb') as file:
+            self.assertEqual(file.read(), b'hello World')  # test the swapped out block is flushed
 
 
 if __name__ == '__main__':
