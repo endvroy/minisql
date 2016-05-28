@@ -41,6 +41,29 @@ class TestBlock(unittest.TestCase):
         with open('foo', 'rb') as file:
             self.assertEqual(file.read(), b'Hello WorlD')
 
+    def test_expanding_write(self):
+        prepare_file()
+        block = Block(5, 'foo', 2)
+        block.write(b'D12')
+        self.assertEqual(block.effective_bytes, 3)
+        block.flush()
+        with open('foo', 'rb') as file:
+            self.assertEqual(file.read(), b'Hello WorlD12')
+
+    def test_overflow_write(self):
+        prepare_file()
+        block = Block(5, 'foo', 2)
+        with self.assertRaises(RuntimeError):
+            block.write(b'whos your daddy')
+        self.assertEqual(block.read(), b'd')  # test the data is not corrupted
+        self.assertEqual(block.effective_bytes, 1)
+        block.write(b'whos your daddy', trunc=True)
+        self.assertEqual(block.read(), b'whos ')
+        self.assertEqual(block.effective_bytes, 5)
+        block.flush()
+        with open('foo', 'rb') as file:
+            self.assertEqual(file.read(), b'Hello Worlwhos ')
+
 
 class TestBufferManager(unittest.TestCase):
     def test_buffer_manager(self):

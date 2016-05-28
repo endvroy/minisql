@@ -25,8 +25,14 @@ class Block:
         self.last_accessed_time = datetime.now()
         return self._memory[:self.effective_bytes]
 
-    def write(self, data):
+    def write(self, data, *, trunc=False):
         """write data into memory"""
+        data_size = len(data)
+        if data_size > self.size:
+            if not trunc:
+                raise RuntimeError('data size({}) is larger than block size({})'.format(data_size, self.size))
+        self.effective_bytes = min(data_size, self.size)
+        self._memory.clear()
         self._memory[:self.effective_bytes] = data
         self.dirty = True
         self.last_accessed_time = datetime.now()
@@ -52,12 +58,12 @@ class Block:
         else:
             raise RuntimeError('this block is already unpinned')
 
-    # def free(self):
-    #     """write data to file and close related file"""
-    #     if self.pin_count == 0:
-    #         self.flush()
-    #     else:
-    #         raise RuntimeError('Trying to free a pinned block')
+            # def free(self):
+            #     """write data to file and close related file"""
+            #     if self.pin_count == 0:
+            #         self.flush()
+            #     else:
+            #         raise RuntimeError('Trying to free a pinned block')
 
 
 class BufferManager:
@@ -99,7 +105,7 @@ class BufferManager:
         for block in self._blocks:
             block.flush()
 
-    # def free(self):
-    #     for block in self._blocks.values():
-    #         block.pin_count = 0
-    #         block.free()
+            # def free(self):
+            #     for block in self._blocks.values():
+            #         block.pin_count = 0
+            #         block.free()
