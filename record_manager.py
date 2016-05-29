@@ -10,61 +10,73 @@ class Record:
         self.record_offset = record_offset
         self.record_struct = Struct(format)
 
-    def append(self, attributes):
-        # 1. Write the new record into corresponding file of its table
-        # 2. The write will fail when the remaining size of block is not enough
-        block = self.buffer_manager.get_file_block(self.filename, self.block_offset)
-        block.pin()
-        block_content = block.read()
-        block_content += (self.record_struct.pack(*attributes))  # not the best solution
-        block.write(block_content)
-        block.unpin()
-
-    def modify(self, attributes):
-        # Change the content of the record at specified position
-        block = self.buffer_manager.get_file_block(self.filename, self.block_offset)
-        block.pin()
-        block_content = block.read()
-        byte_offset = self.record_offset * self.record_struct.size
-        block_content[byte_offset: byte_offset + self.record_struct.size - 1] = \
-            self.record_struct.pack(*attributes)  # modify the corresponding record and then write back
-        block.write(block_content)
-        block.unpin()
-
-    def get_content(self):
-        #
+    def write(self, attributes, mode):
+        # Write will fail when append to a full block, but this should be handled
+        # by catalog manager when it provides the block offset and record offset.
         block = self.buffer_manager.get_file_block(self.filename, self.block_offset)
         block.pin()
         data = block.read()
+        # Get the list of all tuples in the block
+        upper_bound = len(data)
+        if upper_bound % self.record_struct.size != 0:
+            upper_bound -= self.record_struct.size
+        records = [self.record_struct.unpack_from(data, offset)
+                   for offset in range(0, upper_bound, self.record_struct.size)]
+        # Determine the operation to be executed
+        if mode is 'append':
+            records.append(attributes)
+        elif mode is 'modify':
+            records[self.record_offset] = attributes
+        elif mode is 'delete':
+            del records[self.record_offset]
+        else:
+            raise RuntimeError('Wrong mode for writing the record')
+        new_data = bytearray()
+        for r in records:
+            new_data += self.record_struct.pack(*r)
+        block.write(new_data)
+        block.unpin()
+
+    def read(self):
+        block = self.buffer_manager.get_file_block(self.filename, self.block_offset)
+        block.pin()
+        data = block.read()
+        block.unpin()
         records = [self.record_struct.unpack_from(data, offset)
                    for offset in range(0, len(data), self.record_struct.size)]
+        if len(records) <= self.record_offset:
+            raise RuntimeError('The record offset out of range')
         return records[self.record_offset]
 
     def remove(self):
-        # Lazy delete the record at specified position
+        # Whether to use lazy deletion?
         pass
 
 
 class RecordManager:
-    # 1. Need to have the format of records for each table.(metadata, stored in catalog)
-    # 2. Need to receive the table's name, and the block's offset in the file
-    # 3. Need to receive the record's position in the corresponding block
+    # 1. Need to receive the format of the record for corresponding table.
+    # 2. Need to receive the table's name(or the filename), and the block's offset in the file.
+    # 3. Need to receive the record's position in the corresponding block.
+    # 4. All above are considered as metadata and should be manipulated by catalog manager,
+    #  In the API module, high-level programs get the filename, block offset, record offset from
+    # catalog manager, and then call the corresponding methods provided by record manager.
 
     def __init__(self):
         self.buffer_manager = BufferManager()
 
     def insert(self, filename, block_offset, record_offset, attributes, format):
         record = Record(self.buffer_manager, filename, block_offset, record_offset, format)
-        record.append(attributes)
+        record.write(attributes, mode='append')
         return record_offset
 
-    def update(self,filename, block_offset, record_offset, attributes, format):
+    def update(self, filename, block_offset, record_offset, attributes, format):
         record = Record(self.buffer_manager, filename, block_offset, record_offset, format)
-        record.modify(attributes)
+        record.write(attributes, mode='modify')
 
     def select(self, filename, block_offset, record_offset, format):
         record = Record(self.buffer_manager, filename, block_offset, record_offset, format)
-        return record.get_content()
+        return record.read()
 
-    def delete(self):
-        pass
+    def delete(self, filename, block_offset, record_offset, format):
+        record = Record(self.buffer_manager, filename, block_offset, record_offset, format)
+        record.write((), mode='delete')
