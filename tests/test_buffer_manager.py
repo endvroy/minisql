@@ -68,13 +68,15 @@ class TestBlock(unittest.TestCase):
 class TestBufferManager(unittest.TestCase):
     def test_buffer_manager(self):
         BufferManager.block_size = 5
+        BufferManager.total_blocks = 2
         prepare_file()
-        manager = BufferManager(total_blocks=2)
+        manager = BufferManager()
         a = manager.get_file_block('foo', 0)
         a.pin()
         self.assertEqual(a.read(), b'Hello')
         b = manager.get_file_block('./foo', 0)
         self.assertTrue(a is b)  # test cache hit
+        a.write(b'hello')
 
         b = manager.get_file_block('foo', 1)
         b.pin()
@@ -87,7 +89,17 @@ class TestBufferManager(unittest.TestCase):
         c = manager.get_file_block('foo', 2)  # test lru swap
         self.assertFalse((os.path.abspath('foo'), 0) in manager._blocks.keys())  # a should be swapped out
         self.assertTrue((os.path.abspath('foo'), 1) in manager._blocks.keys())  # b should remain in the buffer
-        # manager.free()
+        with open('foo', 'rb') as file:
+            self.assertEqual(file.read(), b'hello World')  # test the swapped out block is flushed
+
+    def test_singleton(self):
+        manager_a = BufferManager()
+        manager_b = BufferManager()
+        self.assertTrue(manager_a is manager_b)
+
+    def test_import_singleton(self):
+        import tests.buffer_import_a, tests.buffer_import_b
+        self.assertTrue(tests.buffer_import_a.manager is tests.buffer_import_b.manager)
 
 
 if __name__ == '__main__':

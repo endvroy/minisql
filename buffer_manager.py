@@ -8,8 +8,7 @@ class Block:
         self._memory = bytearray(size)
         self.file_path = os.path.abspath(file_path)
         self.block_offset = block_offset
-        mode = 'r+b' if os.path.exists(file_path) else 'w+b'
-        with open(file_path, mode) as file:
+        with open(file_path, 'rb') as file:
             file.seek(self.size * block_offset)
             # beware that the remaining data in the file may not be enough to fill the whole block!
             # self.effective_bytes store how many bytes are really loaded into memory
@@ -27,11 +26,13 @@ class Block:
         return self._memory[:self.effective_bytes]
 
     def write(self, data, *, trunc=False):
-        """write data into memory"""
+        """write data into memory and adjust self.effective_bytes
+        if data size is larger than block size, raise RuntimeError
+        unless trunc is asserted to True, when overflowed data will be truncated"""
         data_size = len(data)
         if data_size > self.size:
             if not trunc:
-                raise RuntimeError('data size({}) is larger than block size({})'.format(data_size, self.size))
+                raise RuntimeError('data size({}B) is larger than block size({}B)'.format(data_size, self.size))
         self.effective_bytes = min(data_size, self.size)
         self._memory.clear()
         self._memory[:self.effective_bytes] = data
@@ -59,19 +60,25 @@ class Block:
         else:
             raise RuntimeError('this block is already unpinned')
 
-            # def free(self):
-            #     """write data to file and close related file"""
-            #     if self.pin_count == 0:
-            #         self.flush()
-            #     else:
-            #         raise RuntimeError('Trying to free a pinned block')
+
+class SingletonMeta(type):
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(SingletonMeta, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
 
 
-class BufferManager:
+class Singleton(metaclass=SingletonMeta):
+    pass
+
+
+class BufferManager(Singleton):
     block_size = 4096
+    total_blocks = 1024
 
-    def __init__(self, total_blocks=1024):
-        self.total_blocks = total_blocks
+    def __init__(self):
         self._blocks = {}
 
     def get_file_block(self, file_path, block_offset):
@@ -105,8 +112,3 @@ class BufferManager:
     def flush_all(self):
         for block in self._blocks.values():
             block.flush()
-
-            # def free(self):
-            #     for block in self._blocks.values():
-            #         block.pin_count = 0
-            #         block.free()
