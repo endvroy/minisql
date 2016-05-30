@@ -121,5 +121,5 @@ class BufferManager(Singleton):
                 return block
 
     def flush_all(self):
-        for block in self._blocks:
+        for block in self._blocks.values():
             block.flush()
