@@ -1,5 +1,15 @@
 from datetime import datetime
 import os
+from contextlib import contextmanager
+
+
+@contextmanager
+def pin(block):
+    """a context manager for safe pin/unpin
+    it is the preferred way to pin a block if the life cycle of the block is known"""
+    block.pin()
+    yield
+    block.unpin()
 
 
 class Block:
@@ -10,8 +20,10 @@ class Block:
         self.block_offset = block_offset
         with open(file_path, 'rb') as file:
             file.seek(self.size * block_offset)
-            # beware that the remaining data in the file may not be enough to fill the whole block!
-            # self.effective_bytes store how many bytes are really loaded into memory
+            # the remaining data in the file may not be enough to fill the whole block
+            # self.effective_bytes store how many bytes are really loaded into memory,
+            # which may be updated in future writes
+            # it is ultimately used to determine how many bytes are written back to file, in self.flush()
             self.effective_bytes = file.readinto(self._memory)
 
         self.dirty = False
@@ -34,7 +46,6 @@ class Block:
             if not trunc:
                 raise RuntimeError('data size({}B) is larger than block size({}B)'.format(data_size, self.size))
         self.effective_bytes = min(data_size, self.size)
-        self._memory.clear()
         self._memory[:self.effective_bytes] = data
         self.dirty = True
         self.last_accessed_time = datetime.now()
