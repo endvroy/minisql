@@ -1,7 +1,7 @@
 import unittest
 import os
 import time
-from buffer_manager import Block, BufferManager
+from buffer_manager import pin, Block, BufferManager
 
 
 def prepare_file():
@@ -63,6 +63,16 @@ class TestBlock(unittest.TestCase):
         block.flush()
         with open('foo', 'rb') as file:
             self.assertEqual(file.read(), b'Hello Worlwhos ')
+
+
+class TestContextManager(unittest.TestCase):
+    def test_pin(self):
+        prepare_file()
+        block = Block(5, 'foo', 0)
+        with pin(block):
+            self.assertEqual(block.pin_count, 1)
+            self.assertEqual(block.read(), b'Hello')
+        self.assertEqual(block.pin_count, 0)
 
 
 class TestBufferManager(unittest.TestCase):

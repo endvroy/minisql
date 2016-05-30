@@ -1,5 +1,15 @@
 from datetime import datetime
 import os
+from contextlib import contextmanager
+
+
+@contextmanager
+def pin(block):
+    """a context manager for safe pin/unpin
+    it is the preferred way to pin a block if the life cycle of the block is known"""
+    block.pin()
+    yield
+    block.unpin()
 
 
 class Block:
