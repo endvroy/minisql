@@ -46,7 +46,7 @@ class Block:
             if not trunc:
                 raise RuntimeError('data size({}B) is larger than block size({}B)'.format(data_size, self.size))
         self.effective_bytes = min(data_size, self.size)
-        self._memory[:self.effective_bytes] = data
+        self._memory[:self.effective_bytes] = data[:self.effective_bytes]
         self.dirty = True
         self.last_accessed_time = datetime.now()
 
