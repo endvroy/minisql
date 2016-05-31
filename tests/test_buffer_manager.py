@@ -60,6 +60,7 @@ class TestBlock(unittest.TestCase):
         block.write(b'whos your daddy', trunc=True)
         self.assertEqual(block.read(), b'whos ')
         self.assertEqual(block.effective_bytes, 5)
+        self.assertEqual(len(block._memory), 5)
         block.flush()
         with open('foo', 'rb') as file:
             self.assertEqual(file.read(), b'Hello Worlwhos ')
