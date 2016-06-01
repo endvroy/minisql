@@ -53,11 +53,21 @@ class Block:
     def flush(self):
         """write data from memory to file"""
         if self.dirty:
-            with open(self.file_path, 'r+b') as file:
-                file.seek(self.block_offset * self.size)
-                file.write(self._memory[:self.effective_bytes])
-                file.flush()
-            self.dirty = False
+            try:
+                with open(self.file_path, 'r+b') as file:
+                    file.seek(self.block_offset * self.size)
+                    file.write(self._memory[:self.effective_bytes])
+                    file.flush()
+                self.dirty = False
+            except FileNotFoundError:
+                pass  # suppress this exception
+                # based on the assumption that the file won't magically disappear
+                # unless the table or index file is deleted from our application
+                # in which case flush should just do nothing
+                # because it may be a block remained in the buffer manager
+                # and this flush is most likely to occur when the buffer manager invokes flush_all()
+                # or tries to swap out this block
+                # in either case, it will be the end of the life cycle of this block
         self.last_accessed_time = datetime.now()
 
     def pin(self):
