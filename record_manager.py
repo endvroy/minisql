@@ -1,4 +1,4 @@
-from buffer_manager import Block, BufferManager, pin
+from buffer_manager import BufferManager, pin
 from struct import Struct
 import math
 
@@ -16,7 +16,6 @@ class Record:
         self.record_struct = Struct(real_format)
         self.rec_per_blk = math.floor(BufferManager.block_size / self.record_struct.size)
         self.first_free_rec, self.rec_amount = self._parse_header()
-        self.first_free_blk = math.floor(self.first_free_rec / self.rec_per_blk)
 
     def insert(self, attributes):
         """
@@ -24,16 +23,18 @@ class Record:
         2. by catalog manager when it provides the block offset and record offset.
         """
         record_info = attributes + (-1,)  # a negative, means this is a real record
+        self.first_free_rec, self.rec_amount = self._parse_header()
         if self.first_free_rec >= 0:
             # There are space in free list
-            block = self.buffer_manager.get_file_block(self.filename, self.first_free_blk)
+            first_free_blk = math.floor(self.first_free_rec / self.rec_per_blk)
+            block = self.buffer_manager.get_file_block(self.filename, first_free_blk)
             with pin(block):
                 data = block.read()
-                records = self._parse_block_data(data, self.first_free_blk)
+                records = self._parse_block_data(data, first_free_blk)
                 next_free_rec = records[self.first_free_rec][-1]
-                local_offset = self.first_free_rec - self.first_free_blk * self.rec_per_blk
+                local_offset = self.first_free_rec - first_free_blk * self.rec_per_blk
                 records[local_offset] = record_info
-                new_data = self._generate_new_data(records, self.first_free_blk)
+                new_data = self._generate_new_data(records, first_free_blk)
                 block.write(new_data)
             position = self.first_free_rec
             self.first_free_rec = next_free_rec
@@ -52,13 +53,18 @@ class Record:
         return position
 
     def remove(self, record_offset):
-        """Remove the record at specified position and update the freelist"""
+        """Remove the record at specified position and update the free list"""
+        self.first_free_rec, self.rec_amount = self._parse_header()
         block_offset = math.floor(record_offset / self.rec_per_blk)
         local_offset = record_offset - block_offset * self.rec_per_blk
         block = self.buffer_manager.get_file_block(self.filename, block_offset)
         with pin(block):
             data = block.read()
             records = self._parse_block_data(data, block_offset)
+            try:
+                records[local_offset][-1]
+            except IndexError:
+                raise IndexError('The offset points to a empty space')
             records[local_offset][-1] = self.first_free_rec  # A positive number, putting this position into free list
             self.first_free_rec = record_offset  # update the head of free list
             new_data = self._generate_new_data(records, block_offset)
@@ -79,7 +85,7 @@ class Record:
             records = self._parse_block_data(data, block_offset)
             records[local_offset] = record_info
             new_data = self._generate_new_data(records, block_offset)
-            block.write()
+            block.write(new_data)
 
     def read(self, record_offset):
         """ Return the record at the corresponding position """
@@ -113,7 +119,8 @@ class Record:
         return records
 
     def _parse_header(self):
-        """Parse the file header and return the information with a tuple"""
+        """Parse the file header, refresh corresponding info
+            and return the info with a tuple"""
         block = self.buffer_manager.get_file_block(self.filename, 0)  # Get the first block
         with pin(block):
             data = block.read()
@@ -132,11 +139,12 @@ class Record:
 
 class RecordManager:
     # 1. Need to receive the format of the record for corresponding table.
-    # 2. Need to receive the table's name(or the filename), and the block's offset in the file.
+    # 2. Need to receive the table's name(or the filename of which saves the records).
     # 3. Need to receive the record's position in the corresponding block.
     # 4. All above are considered as metadata and should be manipulated by catalog manager,
-    #  In the API module, high-level programs get the filename, block offset, record offset from
-    # catalog manager, and then call the corresponding methods provided by record manager.
+    #  In the API module, high-level programs get the filename, record offset from
+    #  catalog manager and index manager, and then call the corresponding methods
+    #  provided by record manager.
 
     @staticmethod
     def insert(filename, format, attributes):
