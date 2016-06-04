@@ -1,5 +1,4 @@
 import os
-import shutil
 from collections import OrderedDict
 import pickle
 from functools import lru_cache
@@ -32,9 +31,19 @@ class Table:
         self.columns[column.name] = column
 
     def add_index(self, index):
+        if index.name in self.indexes:
+            raise ValueError('already have an index name {} on table {}'.format(index.name,
+                                                                                self.name))
+        for column in index.columns:
+            if column not in self.columns:
+                raise ValueError('no column named {} on table {}'.format(column,
+                                                                         self.name))
         self.indexes[index.name] = index
 
     def drop_index(self, index_name):
+        if index_name == 'PRIMARY':
+            raise ValueError('cannot drop primary index')
+
         if index_name not in self.indexes:
             raise ValueError('no index named {} on table {}'.format(index_name, self.name))
 
@@ -53,12 +62,15 @@ class Metadata:
         if table_name in self.tables:
             raise ValueError('already have a table named {}'.format(table_name))
 
+        if not columns:
+            raise ValueError('no columns specified')
+
         table = Table(table_name)
         primary_keys = []
         for column in columns:
             table.add_column(column)
             if column.primary_key:
-                primary_keys.append(column)
+                primary_keys.append(column.name)
 
         if not primary_keys:
             raise ValueError('primary key not specified')
@@ -66,31 +78,24 @@ class Metadata:
         table.add_index(Index('PRIMARY', primary_keys))
         self.tables[table_name] = table
 
-        # todo: create table file on disk?
-
-        self.dump()
+        # self.dump()
 
     def drop_table(self, table_name):
         if table_name not in self.tables:
             raise ValueError('no table named {}'.format(table_name))
 
-        shutil.rmtree('schema/tables/{}'.format(table_name))
+        del self.tables[table_name]
+        # self.dump()
 
-        self.dump()
-
-    def add_index(self, table_name, index_name, *columns):
+    def add_index(self, table_name, index_name, *column_names):
         if table_name not in self.tables:
             raise ValueError('no table named {}'.format(table_name))
-        if not columns:
+        if not column_names:
             raise ValueError('adding index on empty columns')
 
-        self.tables[table_name].add_index(Index(index_name, columns))
+        self.tables[table_name].add_index(Index(index_name, column_names))
 
-        table_dir = 'schema/tables/{}'.format(table_name)
-        with open(os.path.join(table_dir, '{}.index'.format(index_name)), 'wb') as file:
-            pass
-
-        self.dump()
+        # self.dump()
 
     def drop_index(self, table_name, index_name):
         if table_name not in self.tables:
@@ -98,11 +103,8 @@ class Metadata:
         if index_name not in self.tables[table_name].indexes:
             raise ValueError('no index named {} on table {}'.format(index_name, table_name))
 
-        del self.tables[table_name].indexes[index_name]
-
-        os.remove('schema/tables/{table_name}/{index_name}.index'.format(table_name=table_name,
-                                                                         index_name=index_name))
-        self.dump()
+        self.tables[table_name].drop_index(index_name)
+        # self.dump()
 
 
 def init():
@@ -112,11 +114,11 @@ def init():
 @lru_cache()
 def load_metadata():
     try:
-        with open('schema/metadata.pickle', 'r') as file:
+        with open('schema/metadata.pickle', 'rb') as file:
             metadata = pickle.load(file)
             return metadata
     except FileNotFoundError:
         metadata = Metadata()
-        with open('schema/metadata.pickle', 'w') as file:
+        with open('schema/metadata.pickle', 'wb') as file:
             pickle.dump(metadata, file)
         return metadata

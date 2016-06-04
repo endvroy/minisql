@@ -110,8 +110,8 @@ class TestBufferManager(unittest.TestCase):
         self.assertTrue(manager_a is manager_b)
 
     def test_import_singleton(self):
-        import tests.buffer_import_a, tests.buffer_import_b
-        self.assertTrue(tests.buffer_import_a.manager is tests.buffer_import_b.manager)
+        import tests.import_a, tests.import_b
+        self.assertTrue(tests.import_a.manager is tests.import_b.manager)
 
 
 if __name__ == '__main__':

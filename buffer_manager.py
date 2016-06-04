@@ -13,6 +13,10 @@ def pin(block):
 
 
 class Block:
+    __slots__ = ['size', '_memory',
+                 'file_path', 'block_offset', 'effective_bytes',
+                 'dirty', 'pin_count', 'last_accessed_time']
+
     def __init__(self, size, file_path, block_offset):
         self.size = size
         self._memory = bytearray(size)
