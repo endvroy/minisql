@@ -1,11 +1,27 @@
+###文件组织
+
+所有数据库相关存放于./schema目录下
+
+./schema/metadata.pickle是数据库的metadata
+
+所有表存放在./schema/tables目录的**子目录**下，每个表和相关索引放在同一个目录下，表的文件为XXX.table，索引文件为XXX.index
+
+所有主键索引命名为PRIMARY.index
+
+如spam表和spammer索引，存放为：
+
+./schema/spam/spam.table
+
+./schema/spam/spammer.index
+
+./schema/spam/PRIMARY.index
+
 ###资源
 **在shared resources目录下是共享的开发资源**
 
-5/31 新增facade.pdf，是Head First Design Patterns里面摘出的一部分
+5/31 新增facade.pdf，是Head First Design Patterns里面摘出的一部分，API模块将实现其中提到的功能
 
-API模块将实现其中提到的功能
-
-里面现在有一本python cookbook 3e
+里面有一本python cookbook 3e
 
 由于这个项目需要处理大量二进制文件，难度比较大，大家都去看一下其中的5.9, 5.10, 6.11, 6.12这几章
 
