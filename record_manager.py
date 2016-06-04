@@ -1,17 +1,18 @@
 from buffer_manager import BufferManager, pin
 from struct import Struct
 import math
+import os
 
 
 class Record:
     # The format of header should be the same for all records files.
-    header_format = '<ii'  # free_list_blk, free_list_record, records_amount (<0 means not exist)
+    header_format = '<ii'  # will be confirmed by RecordManager
     header_struct = Struct(header_format)
 
-    def __init__(self, filename, format):
+    def __init__(self, file_path, fmt):
         self.buffer_manager = BufferManager()
-        self.filename = filename
-        real_format = format + 'i'
+        self.filename = file_path
+        real_format = fmt + 'i'
         # Each record in file has 2 extra info: next's block_off and next's record_off
         self.record_struct = Struct(real_format)
         self.rec_per_blk = math.floor(BufferManager.block_size / self.record_struct.size)
@@ -146,23 +147,47 @@ class RecordManager:
     #  catalog manager and index manager, and then call the corresponding methods
     #  provided by record manager.
 
-    @staticmethod
-    def insert(filename, format, attributes):
-        record = Record(filename, format)
+    header_format = '<ii'  # free_list_record(negative means not exist) and  records_amount.
+    header_struct = Struct(header_format)
+    file_dir = './schema/tables/'
+
+    @classmethod
+    def init_table(cls, table_name):
+        Record.header_format = cls.header_format  # confirm the corresponding info in Record
+        Record.header_struct = cls.header_struct
+        file_path = cls.file_dir + table_name + '.table'
+        print(os.path.curdir)
+        if os.path.exists(file_path):
+            raise RuntimeError('The file for table \'{}\' has already exists'.format(table_name))
+        else:
+            with open(file_path, 'w+b') as file:
+                file.write(cls.header_struct.pack(*(-1, 0)))
+
+    @classmethod
+    def insert(cls, table_name, fmt, attributes):
+        """
+            insert the given record into a suitable space,
+            and return the offset of the inserted record
+        """
+        file_path = cls.file_dir + table_name + '.table'
+        record = Record(file_path, fmt)
         position = record.insert(attributes)
         return position
 
-    @staticmethod
-    def delete(filename, format, record_offset):
-        record = Record(filename, format)
+    @classmethod
+    def delete(cls, table_name, fmt, record_offset):
+        file_path = cls.file_dir + table_name + '.table'
+        record = Record(file_path, fmt)
         record.remove(record_offset)
 
-    @staticmethod
-    def update(filename, format, attributes, record_offset):
-        record = Record(filename, format)
+    @classmethod
+    def update(cls, table_name, fmt, attributes, record_offset):
+        file_path = cls.file_dir + table_name + '.table'
+        record = Record(file_path, fmt)
         record.modify(attributes, record_offset)
 
-    @staticmethod
-    def select(filename, format, record_offset):
-        record = Record(filename, format)
+    @classmethod
+    def select(cls, table_name, fmt, record_offset):
+        file_path = cls.file_dir + table_name + '.table'
+        record = Record(file_path, fmt)
         return record.read(record_offset)
