@@ -1,4 +1,6 @@
-###文件组织
+**为了消除歧义，原先被称为API的模块现在一律改称为facade。不明白facade是什么意思的可以去看shared resources 里面的facade.pdf**
+
+###文件组织（重要）
 
 所有数据库相关存放于./schema目录下
 
