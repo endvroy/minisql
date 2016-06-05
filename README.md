@@ -12,11 +12,11 @@
 
 如spam表和spammer索引，存放为：
 
-./schema/spam/spam.table
+./schema/tables/spam/spam.table
 
-./schema/spam/spammer.index
+./schema/tables/spam/spammer.index
 
-./schema/spam/PRIMARY.index
+./schema/tables/spam/PRIMARY.index
 
 ###资源
 **在shared resources目录下是共享的开发资源**
