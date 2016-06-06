@@ -16,11 +16,11 @@ class TestRecord(unittest.TestCase):
         record = Record('./schema/tables/foo.table', '<idi')
         self.assertEqual(record._parse_header(), (-1, 0))
         record.first_free_rec = 2
-        record.rec_amount = 2
+        record.rec_tail = 2
         record._update_header()
         self.assertEqual(record._parse_header(), (2, 2))
         record.first_free_rec = -1
-        record.rec_amount = 0
+        record.rec_tail = 0
         record._update_header()
         self.assertEqual(record._parse_header(), (-1, 0))
 

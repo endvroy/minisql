@@ -12,22 +12,16 @@ class Record:
     def __init__(self, file_path, fmt):
         self.buffer_manager = BufferManager()
         self.filename = file_path
-        real_format = fmt + 'ci'
         # Each record in file has 2 extra info: next's record_off and valid bit
-        self.record_struct = Struct(real_format)
+        self.record_struct = Struct(fmt + 'ci')
         self.rec_per_blk = math.floor(BufferManager.block_size / self.record_struct.size)
-        self.first_free_rec, self.rec_amount = self._parse_header()
+        self.first_free_rec, self.rec_tail = self._parse_header()
 
     def insert(self, attributes):
-        """
-        1. Insert will fail when append to a full block, but this should be handled
-        2. by catalog manager when it provides the block offset and record offset.
-        """
-        record_info = self._convert_str_to_bytes(attributes) + (b'1', -1)
-
-        self.first_free_rec, self.rec_amount = self._parse_header()
-        if self.first_free_rec >= 0:
-            # There are space in free list
+        """Insert the given record"""
+        record_info = self._convert_str_to_bytes(attributes) + (b'1', -1)  # valid bit, next free space
+        self.first_free_rec, self.rec_tail = self._parse_header()
+        if self.first_free_rec >= 0:  # There are space in free list
             first_free_blk = math.floor(self.first_free_rec / self.rec_per_blk)
             block = self.buffer_manager.get_file_block(self.filename, first_free_blk)
             with pin(block):
@@ -41,8 +35,8 @@ class Record:
             position = self.first_free_rec
             self.first_free_rec = next_free_rec
         else:  # No space in free list, append the new record to the end of file
-            self.rec_amount += 1
-            block_offset = math.floor(self.rec_amount / self.rec_per_blk)
+            self.rec_tail += 1
+            block_offset = math.floor(self.rec_tail / self.rec_per_blk)
             block = self.buffer_manager.get_file_block(self.filename, block_offset)
             with pin(block):
                 data = block.read()
@@ -50,13 +44,13 @@ class Record:
                 records.append(record_info)
                 new_data = self._generate_new_data(records, block_offset)
                 block.write(new_data)
-            position = self.rec_amount
+            position = self.rec_tail
         self._update_header()
         return position
 
     def remove(self, record_offset):
         """Remove the record at specified position and update the free list"""
-        self.first_free_rec, self.rec_amount = self._parse_header()
+        self.first_free_rec, self.rec_tail = self._parse_header()
         block_offset = math.floor(record_offset / self.rec_per_blk)
         local_offset = record_offset - block_offset * self.rec_per_blk
         block = self.buffer_manager.get_file_block(self.filename, block_offset)
@@ -77,10 +71,7 @@ class Record:
         self._update_header()
 
     def modify(self, attributes, record_offset):
-        """
-          1. Assume that the provided record_offset must point to a real record
-          2. During update, file header keeps invariant.
-         """
+        """Modify the record at specified offset"""
         block_offset = math.floor(record_offset / self.rec_per_blk)
         local_offset = record_offset - block_offset * self.rec_per_blk
         block = self.buffer_manager.get_file_block(self.filename, block_offset)
@@ -108,27 +99,17 @@ class Record:
 
     @staticmethod
     def _convert_str_to_bytes(attributes):
-        """
-        Convert the string attributes in the record to bytes,
-        so that it can be received by struct.pack later.
-        """
         attr_list = list(attributes)
         for index, item in enumerate(attr_list):
-            if type(item) is str:
+            if isinstance(item, str):
                 attr_list[index] = item.encode('ASCII')
         return tuple(attr_list)
 
     @staticmethod
     def _convert_bytes_to_str(attributes):
-        """
-        When a record  is unpacked from binary files, those
-        attributes with type string are still bytes.
-        This function converts those bytes attributes into string,
-        and then the standard record can be returned to user.
-        """
         attr_list = list(attributes)
         for index, item in enumerate(attr_list):
-            if type(item) is bytes:
+            if isinstance(item, bytes):
                 attr_list[index] = item.decode('ASCII').rstrip('\00')
         return tuple(attr_list)
 
@@ -154,8 +135,8 @@ class Record:
         return records
 
     def _parse_header(self):
-        """Parse the file header, refresh corresponding info
-            and return the info with a tuple"""
+        # Parse the file header, refresh corresponding info
+        # and return the info with a tuple
         block = self.buffer_manager.get_file_block(self.filename, 0)  # Get the first block
         with pin(block):
             data = block.read()
@@ -163,34 +144,30 @@ class Record:
         return header_info
 
     def _update_header(self):
-        """Update the file header after modifying the records"""
+        # Update the file header after modifying the records
         block = self.buffer_manager.get_file_block(self.filename, 0)
         with pin(block):
             data = block.read()
-            header_info = (self.first_free_rec, self.rec_amount)
+            header_info = (self.first_free_rec, self.rec_tail)
             data[:self.header_struct.size] = self.header_struct.pack(*header_info)
             block.write(data)
 
 
 class RecordManager:
-    # 1. Need to receive the format of the record for corresponding table.
-    # 2. Need to receive the table's name(or the filename of which saves the records).
-    # 3. Need to receive the record's position in the corresponding block.
-    # 4. All above are considered as metadata and should be manipulated by catalog manager,
-    #  In the API module, high-level programs get the filename, record offset from
-    #  catalog manager and index manager, and then call the corresponding methods
-    #  provided by record manager.
+    # 1. Need to receive the format of the record for corresponding table. (metadata)
+    # 2. Need to receive the table's name. (metadata)
+    # 3. Need to receive the record's offset
 
-    header_format = '<ii'  # free_list_record(negative means not exist) and  records_amount.
+    header_format = '<ii'  # free_list_head and records_tail.
     header_struct = Struct(header_format)
     file_dir = './schema/tables/'
 
     @classmethod
     def init_table(cls, table_name):
+        """Initialize the table file"""
         Record.header_format = cls.header_format  # confirm the corresponding info in Record
         Record.header_struct = cls.header_struct
         file_path = cls.file_dir + table_name + '.table'
-        print(os.path.curdir)
         if os.path.exists(file_path):
             raise RuntimeError('The file for table \'{}\' has already exists'.format(table_name))
         else:
