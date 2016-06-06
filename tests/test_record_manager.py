@@ -65,6 +65,10 @@ class TestRecordManager(unittest.TestCase):
         RecordManager.update('gg', '<idi', (1, 3.0, 4), 1)
         self.assertEqual(RecordManager.select('gg', '<idi', 1), (1, 3.0, 4))
         RecordManager.delete('gg', '<idi', 1)
+        with self.assertRaises(RuntimeError):
+            RecordManager.select('gg', '<idi', 1)
+            RecordManager.update('gg', '<idi', (1, 2.0, 3), 1)
+
 
     def test_records_with_string(self):
         RecordManager.insert('ggg', '<idi4s', (1, 2.0, 3, 'temps'))
@@ -75,6 +79,10 @@ class TestRecordManager(unittest.TestCase):
         RecordManager.update('ggg', '<idi4s', (1, 2.0, 3, 'nono'), 1)
         self.assertEqual(RecordManager.select('ggg', '<idi4s', 1), (1, 2.0, 3, 'nono'))
         RecordManager.delete('ggg', '<idi4s', 1)
+        RecordManager.delete('ggg', '<idi4s', 0)
+        with self.assertRaises(RuntimeError):
+            RecordManager.select('ggg', '<idi4s', 0)
+            RecordManager.update('ggg', '<idi4s', (1, 2.0, 3, 'nono'), 1)
 
     def test_repeat_file(self):
         with self.assertRaises(RuntimeError):
