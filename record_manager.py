@@ -23,7 +23,9 @@ class Record:
         1. Insert will fail when append to a full block, but this should be handled
         2. by catalog manager when it provides the block offset and record offset.
         """
-        record_info = attributes + (-1,)  # a negative, means this is a real record
+
+        record_info = self._convert_str_to_bytes(attributes) + (-1,)  # a negative, means this is a real record
+
         self.first_free_rec, self.rec_amount = self._parse_header()
         if self.first_free_rec >= 0:
             # There are space in free list
@@ -80,7 +82,7 @@ class Record:
         block_offset = math.floor(record_offset / self.rec_per_blk)
         local_offset = record_offset - block_offset * self.rec_per_blk
         block = self.buffer_manager.get_file_block(self.filename, block_offset)
-        record_info = attributes + (-1,)  # Updated record must be real
+        record_info = self._convert_str_to_bytes(attributes) + (-1,)  # Updated record must be real
         with pin(block):
             data = block.read()
             records = self._parse_block_data(data, block_offset)
@@ -96,7 +98,33 @@ class Record:
         with pin(block):
             data = block.read()
             records = self._parse_block_data(data, block_offset)
-        return tuple(records[local_offset][:-1])
+        return self._convert_bytes_to_str(tuple(records[local_offset][:-1]))
+
+    @staticmethod
+    def _convert_str_to_bytes(attributes):
+        """
+        Convert the string attributes in the record to bytes,
+        so that it can be received by struct.pack later.
+        """
+        attr_list = list(attributes)
+        for index, item in enumerate(attr_list):
+            if type(item) is str:
+                attr_list[index] = item.encode('ASCII')
+        return tuple(attr_list)
+
+    @staticmethod
+    def _convert_bytes_to_str(attributes):
+        """
+        When a record  is unpacked from binary files, those
+        attributes with type string are still bytes.
+        This function converts those bytes attributes into string,
+        and then the standard record can be returned to user.
+        """
+        attr_list = list(attributes)
+        for index, item in enumerate(attr_list):
+            if type(item) is bytes:
+                attr_list[index] = item.decode('ASCII').rstrip('\00')
+        return tuple(attr_list)
 
     def _generate_new_data(self, records, blk_offset):
         if blk_offset is 0:
