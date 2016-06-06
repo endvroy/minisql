@@ -4,6 +4,12 @@ import os
 
 os.chdir('..')
 
+'''
+# Called only once to initialize table files
+ RecordManager.init_table('foo')
+ RecordManager.init_table('gg')
+ RecordManager.init_table('ggg')
+'''
 
 class TestRecord(unittest.TestCase):
     def test_header(self):
@@ -42,6 +48,14 @@ class TestRecord(unittest.TestCase):
         record.modify((1, 1.3, -1), 1)  # test modify
         self.assertEqual(record.read(1), (1, 1.3, -1))
 
+    def test_attributes_conversion(self):
+        record = Record('./schema/tables/foo.table', '<idi')
+        self.assertEqual((record._convert_str_to_bytes((1, 'abcd', 3, 'qweqwe'))),
+                         (1, b'abcd', 3, b'qweqwe'))
+
+        self.assertEqual(record._convert_bytes_to_str((1, b'abcd', 3, b'qweqwe')),
+                         (1, 'abcd', 3, 'qweqwe'))
+
 
 class TestRecordManager(unittest.TestCase):
     def test_record_manager(self):
@@ -51,6 +65,16 @@ class TestRecordManager(unittest.TestCase):
         RecordManager.update('gg', '<idi', (1, 3.0, 4), 1)
         self.assertEqual(RecordManager.select('gg', '<idi', 1), (1, 3.0, 4))
         RecordManager.delete('gg', '<idi', 1)
+
+    def test_records_with_string(self):
+        RecordManager.insert('ggg', '<idi4s', (1, 2.0, 3, 'temps'))
+        # todo: check the length of string in the given attributes ?
+        self.assertEqual(RecordManager.select('ggg', '<idi4s', 0), (1, 2.0, 3, 'temp'))
+        RecordManager.insert('ggg', '<idi4s', (1, 2.0, 3, 'no'))  # less than maximum length
+        self.assertEqual(RecordManager.select('ggg', '<idi4s', 1), (1, 2.0, 3, 'no'))
+        RecordManager.update('ggg', '<idi4s', (1, 2.0, 3, 'nono'), 1)
+        self.assertEqual(RecordManager.select('ggg', '<idi4s', 1), (1, 2.0, 3, 'nono'))
+        RecordManager.delete('ggg', '<idi4s', 1)
 
     def test_repeat_file(self):
         with self.assertRaises(RuntimeError):
