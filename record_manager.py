@@ -12,8 +12,8 @@ class Record:
     def __init__(self, file_path, fmt):
         self.buffer_manager = BufferManager()
         self.filename = file_path
-        real_format = fmt + 'i'
-        # Each record in file has 2 extra info: next's block_off and next's record_off
+        real_format = fmt + 'ci'
+        # Each record in file has 2 extra info: next's record_off and valid bit
         self.record_struct = Struct(real_format)
         self.rec_per_blk = math.floor(BufferManager.block_size / self.record_struct.size)
         self.first_free_rec, self.rec_amount = self._parse_header()
@@ -23,8 +23,7 @@ class Record:
         1. Insert will fail when append to a full block, but this should be handled
         2. by catalog manager when it provides the block offset and record offset.
         """
-
-        record_info = self._convert_str_to_bytes(attributes) + (-1,)  # a negative, means this is a real record
+        record_info = self._convert_str_to_bytes(attributes) + (b'1', -1)
 
         self.first_free_rec, self.rec_amount = self._parse_header()
         if self.first_free_rec >= 0:
@@ -67,8 +66,11 @@ class Record:
             try:
                 records[local_offset][-1]
             except IndexError:
-                raise IndexError('The offset points to a empty space')
+                raise IndexError('The offset points to an empty space')
+            if records[local_offset][-2] == b'0':
+                raise RuntimeError('Cannot remove an empty record')
             records[local_offset][-1] = self.first_free_rec  # A positive number, putting this position into free list
+            records[local_offset][-2] = b'0'
             self.first_free_rec = record_offset  # update the head of free list
             new_data = self._generate_new_data(records, block_offset)
             block.write(new_data)
@@ -82,10 +84,12 @@ class Record:
         block_offset = math.floor(record_offset / self.rec_per_blk)
         local_offset = record_offset - block_offset * self.rec_per_blk
         block = self.buffer_manager.get_file_block(self.filename, block_offset)
-        record_info = self._convert_str_to_bytes(attributes) + (-1,)  # Updated record must be real
+        record_info = self._convert_str_to_bytes(attributes) + (b'1', -1)  # Updated record must be real
         with pin(block):
             data = block.read()
             records = self._parse_block_data(data, block_offset)
+            if records[local_offset][-2] == b'0':
+                raise RuntimeError('Cannot update an empty record')
             records[local_offset] = record_info
             new_data = self._generate_new_data(records, block_offset)
             block.write(new_data)
@@ -98,7 +102,9 @@ class Record:
         with pin(block):
             data = block.read()
             records = self._parse_block_data(data, block_offset)
-        return self._convert_bytes_to_str(tuple(records[local_offset][:-1]))
+            if records[local_offset][-2] == b'0':
+                raise RuntimeError('Cannot read an empty record')
+        return self._convert_bytes_to_str(tuple(records[local_offset][:-2]))
 
     @staticmethod
     def _convert_str_to_bytes(attributes):
