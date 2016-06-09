@@ -1,6 +1,5 @@
 from buffer_manager import BufferManager, pin
 from struct import Struct
-import math
 import os
 
 
@@ -14,7 +13,6 @@ class Record:
         self.filename = file_path
         # Each record in file has 2 extra info: next's record_off and valid bit
         self.record_struct = Struct(fmt + 'ci')
-        self.rec_per_blk = math.floor(BufferManager.block_size / self.record_struct.size)
         self.first_free_rec, self.rec_tail = self._parse_header()
 
     def insert(self, attributes):
@@ -22,13 +20,12 @@ class Record:
         record_info = self._convert_str_to_bytes(attributes) + (b'1', -1)  # valid bit, next free space
         self.first_free_rec, self.rec_tail = self._parse_header()
         if self.first_free_rec >= 0:  # There are space in free list
-            first_free_blk = math.floor(self.first_free_rec / self.rec_per_blk)
+            first_free_blk, local_offset = self._calc(self.first_free_rec)
             block = self.buffer_manager.get_file_block(self.filename, first_free_blk)
             with pin(block):
                 data = block.read()
                 records = self._parse_block_data(data, first_free_blk)
                 next_free_rec = records[self.first_free_rec][-1]
-                local_offset = self.first_free_rec - first_free_blk * self.rec_per_blk
                 records[local_offset] = record_info
                 new_data = self._generate_new_data(records, first_free_blk)
                 block.write(new_data)
@@ -36,7 +33,7 @@ class Record:
             self.first_free_rec = next_free_rec
         else:  # No space in free list, append the new record to the end of file
             self.rec_tail += 1
-            block_offset = math.floor(self.rec_tail / self.rec_per_blk)
+            block_offset, local_offset = self._calc(self.rec_tail)
             block = self.buffer_manager.get_file_block(self.filename, block_offset)
             with pin(block):
                 data = block.read()
@@ -51,8 +48,7 @@ class Record:
     def remove(self, record_offset):
         """Remove the record at specified position and update the free list"""
         self.first_free_rec, self.rec_tail = self._parse_header()
-        block_offset = math.floor(record_offset / self.rec_per_blk)
-        local_offset = record_offset - block_offset * self.rec_per_blk
+        block_offset, local_offset = self._calc(record_offset)
         block = self.buffer_manager.get_file_block(self.filename, block_offset)
         with pin(block):
             data = block.read()
@@ -72,8 +68,7 @@ class Record:
 
     def modify(self, attributes, record_offset):
         """Modify the record at specified offset"""
-        block_offset = math.floor(record_offset / self.rec_per_blk)
-        local_offset = record_offset - block_offset * self.rec_per_blk
+        block_offset, local_offset = self._calc(record_offset)
         block = self.buffer_manager.get_file_block(self.filename, block_offset)
         record_info = self._convert_str_to_bytes(attributes) + (b'1', -1)  # Updated record must be real
         with pin(block):
@@ -87,8 +82,7 @@ class Record:
 
     def read(self, record_offset):
         """ Return the record at the corresponding position """
-        block_offset = math.floor(record_offset / self.rec_per_blk)
-        local_offset = record_offset - block_offset * self.rec_per_blk
+        block_offset, local_offset = self._calc(record_offset)
         block = self.buffer_manager.get_file_block(self.filename, block_offset)
         with pin(block):
             data = block.read()
@@ -96,6 +90,52 @@ class Record:
             if records[local_offset][-2] == b'0':
                 raise RuntimeError('Cannot read an empty record')
         return self._convert_bytes_to_str(tuple(records[local_offset][:-2]))
+
+    def scanning_select(self, conditions):
+        # condition should be a dict: { attribute offset : {operator : value } }
+        total_blk = self._calc(self.rec_tail)[0] + 1
+        result_set = []
+        for block_offset in range(total_blk):
+            block = self.buffer_manager.get_file_block(self.filename, block_offset)
+            records = self._parse_block_data(block.read(), block_offset)
+            result_set += [record for record in records
+                           if self._check_condition(record, conditions) is True]
+        return result_set
+
+    def scanning_delete(self, conditions):
+        total_blk = self._calc(self.rec_tail)[0] + 1
+        record_offset = 0
+        for block_offset in range(total_blk):
+            block = self.buffer_manager.get_file_block(self.filename, block_offset)
+            records = self._parse_block_data(block.read(), block_offset)
+            for i, record in enumerate(records):
+                if self._check_condition(record, conditions):
+                    records[i][-2] = b'0'
+                    record[i][-1] = self.first_free_rec
+                    self.first_free_rec = record_offset
+                record_offset += 1
+            block.write(self._generate_new_data(records, block_offset))
+
+    def scanning_update(self, conditions, attributes):
+        total_blk = self._calc(self.rec_tail)[0] + 1
+        new_record = self._convert_str_to_bytes(attributes) + (b'1', -1)
+        for block_offset in range(total_blk):
+            block = self.buffer_manager.get_file_block(self.filename, block_offset)
+            records = self._parse_block_data(block.read(), block_offset)
+            for i, record in enumerate(records):
+                if self._check_condition(record, conditions):
+                    records[i] = new_record
+            block.write(self._generate_new_data(records, block_offset))
+
+    def _calc(self, record_offset):
+        rec_per_blk = BufferManager.block_size // self.record_struct.size
+        rec_first_blk = (BufferManager.block_size - self.header_struct.size) // self.record_struct.size
+        if record_offset < rec_first_blk:  # in 1st block
+            return 0, record_offset
+        else:  # not in 1st block
+            block_offset = (record_offset - rec_first_blk) // rec_per_blk + 1
+            local_offset = record_offset - rec_first_blk - (block_offset - 1) * rec_per_blk
+            return block_offset, local_offset
 
     @staticmethod
     def _convert_str_to_bytes(attributes):
@@ -112,6 +152,24 @@ class Record:
             if isinstance(item, bytes):
                 attr_list[index] = item.decode('ASCII').rstrip('\00')
         return tuple(attr_list)
+
+    @staticmethod
+    def _check_condition(record, conditions):
+        if record[-2] is b'0': #check the valid bit, return false when meet empty record
+            return False
+        for position, condition in conditions.items():
+            value = record[position]
+            for operator_type, value_restriction in condition.items():
+                if operator_type is '=':
+                    if value != value_restriction:
+                        return False
+                elif operator_type is '>':
+                    if value <= value_restriction:
+                        return False
+                elif operator_type is '<':
+                    if value >= value_restriction:
+                        return False
+        return True
 
     def _generate_new_data(self, records, blk_offset):
         if blk_offset is 0:
@@ -198,7 +256,21 @@ class RecordManager:
         record.modify(attributes, record_offset)
 
     @classmethod
-    def select(cls, table_name, fmt, record_offset):
+    def select(cls, table_name, fmt, *, with_index, record_offset=None, condition=None):
         file_path = cls.file_dir + table_name + '.table'
         record = Record(file_path, fmt)
         return record.read(record_offset)
+        # if with_index:
+        #     if record_offset is None:
+        #         raise RuntimeError('Not specify record offset when using index')
+        #     return record.read(record_offset)
+        # else:
+        #     if condition is None:
+        #         raise RuntimeError('Not specify condition when not using index')
+        #     return record.scanning_select(condition)
+
+
+'''
+RecordManager.select('tablename', fmt, with_index=True, record_offset=xxx)
+RecordManager.select('tablename', fmt, with_index=False, condition=xxx)
+'''
