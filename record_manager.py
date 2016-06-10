@@ -98,7 +98,7 @@ class Record:
         for block_offset in range(total_blk):
             block = self.buffer_manager.get_file_block(self.filename, block_offset)
             records = self._parse_block_data(block.read(), block_offset)
-            result_set += [record for record in records
+            result_set += [self._convert_bytes_to_str(record[:-2]) for record in records
                            if self._check_condition(record, conditions) is True]
         return result_set
 
@@ -109,21 +109,23 @@ class Record:
             block = self.buffer_manager.get_file_block(self.filename, block_offset)
             records = self._parse_block_data(block.read(), block_offset)
             for i, record in enumerate(records):
-                if self._check_condition(record, conditions):
+                if self._check_condition(self._convert_bytes_to_str(record), conditions):
                     records[i][-2] = b'0'
-                    record[i][-1] = self.first_free_rec
+                    records[i][-1] = self.first_free_rec
                     self.first_free_rec = record_offset
                 record_offset += 1
             block.write(self._generate_new_data(records, block_offset))
+        self._update_header()
 
     def scanning_update(self, conditions, attributes):
+        # The file header won't change when updating
         total_blk = self._calc(self.rec_tail)[0] + 1
         new_record = self._convert_str_to_bytes(attributes) + (b'1', -1)
         for block_offset in range(total_blk):
             block = self.buffer_manager.get_file_block(self.filename, block_offset)
             records = self._parse_block_data(block.read(), block_offset)
             for i, record in enumerate(records):
-                if self._check_condition(record, conditions):
+                if self._check_condition(self._convert_bytes_to_str(record), conditions):
                     records[i] = new_record
             block.write(self._generate_new_data(records, block_offset))
 
@@ -244,33 +246,40 @@ class RecordManager:
         return position
 
     @classmethod
-    def delete(cls, table_name, fmt, record_offset):
+    def delete(cls, table_name, fmt, *, with_index, record_offset=None, conditions=None):
         file_path = cls.file_dir + table_name + '.table'
         record = Record(file_path, fmt)
-        record.remove(record_offset)
+        if with_index:
+            if record_offset is None:
+                raise RuntimeError('Not specify record offset when using index')
+            return record.remove(record_offset)
+        else:
+            if conditions is None:
+                raise RuntimeError('Not specify condition when not using index')
+            return record.scanning_delete(conditions)
 
     @classmethod
-    def update(cls, table_name, fmt, attributes, record_offset):
+    def update(cls, table_name, fmt, attributes, *, with_index, record_offset=None, conditions=None):
         file_path = cls.file_dir + table_name + '.table'
         record = Record(file_path, fmt)
-        record.modify(attributes, record_offset)
+        if with_index:
+            if record_offset is None:
+                raise RuntimeError('Not specify record offset when using index')
+            return record.modify(attributes, record_offset)
+        else:
+            if conditions is None:
+                raise RuntimeError('Not specify condition when not using index')
+            return record.scanning_update(conditions, attributes)
 
     @classmethod
-    def select(cls, table_name, fmt, *, with_index, record_offset=None, condition=None):
+    def select(cls, table_name, fmt, *, with_index, record_offset=None, conditions=None):
         file_path = cls.file_dir + table_name + '.table'
         record = Record(file_path, fmt)
-        return record.read(record_offset)
-        # if with_index:
-        #     if record_offset is None:
-        #         raise RuntimeError('Not specify record offset when using index')
-        #     return record.read(record_offset)
-        # else:
-        #     if condition is None:
-        #         raise RuntimeError('Not specify condition when not using index')
-        #     return record.scanning_select(condition)
-
-
-'''
-RecordManager.select('tablename', fmt, with_index=True, record_offset=xxx)
-RecordManager.select('tablename', fmt, with_index=False, condition=xxx)
-'''
+        if with_index:
+            if record_offset is None:
+                raise RuntimeError('Not specify record offset when using index')
+            return record.read(record_offset)
+        else:
+            if conditions is None:
+                raise RuntimeError('Not specify condition when not using index')
+            return record.scanning_select(conditions)

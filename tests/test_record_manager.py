@@ -9,9 +9,18 @@ os.chdir('..')
  RecordManager.init_table('foo')
  RecordManager.init_table('gg')
  RecordManager.init_table('ggg')
+ RecordManager.init_table('foo2')
+ RecordManager.init_table('foo3')
 '''
 
+
 class TestRecord(unittest.TestCase):
+    def test_calc(self):
+        record = Record('./schema/tables/foo.table', '<i')
+        self.assertEqual(record._calc(3), (0, 3))
+        self.assertEqual(record._calc(454), (1, 0))
+        self.assertEqual(record._calc(909), (2, 0))
+
     def test_header(self):
         record = Record('./schema/tables/foo.table', '<idi')
         self.assertEqual(record._parse_header(), (-1, 0))
@@ -56,39 +65,89 @@ class TestRecord(unittest.TestCase):
         self.assertEqual(record._convert_bytes_to_str((1, b'abcd', 3, b'qweqwe')),
                          (1, 'abcd', 3, 'qweqwe'))
 
+    def test_without_index(self):
+        record = Record('./schema/tables/foo2.table', '<id5s')
+        record.insert((1, 1.0, 'abcde'))
+        record.insert((1, 1.0, 'bcdef'))
+        record.insert((1, 1.0, 'cdefg'))
+        conditions = dict()
+        conditions[0] = {'=': 1}
+        self.assertEqual(record.scanning_select(conditions), [(1, 1.0, 'abcde'), (1, 1.0, 'bcdef'),
+                                                              (1, 1.0, 'cdefg')])
+        record.scanning_delete(conditions)  # test deletion, case#1
+        self.assertEqual(record.scanning_select(conditions), [])
+        record.insert((1, 1.0, 'abcde'))
+        record.insert((1, 1.0, 'bcdef'))
+        record.insert((1, 1.0, 'cdefg'))
+        conditions[2] = {'=': 'abcde'}
+        record.scanning_delete(conditions)  # test deletion case#2
+        del conditions[2]
+        self.assertEqual(record.scanning_select(conditions), [(1, 1.0, 'cdefg'), (1, 1.0, 'bcdef')])
+        conditions[2] = {'=': 'bcdef'}
+        record.scanning_update(conditions, (2, 1.0, 'new'))
+        del conditions[2]
+        del conditions[0]
+        conditions[1] = {'=': 1.0}
+        self.assertEqual(record.scanning_select(conditions), [(1, 1.0, 'cdefg'), (2, 1.0, 'new')])
+
 
 class TestRecordManager(unittest.TestCase):
     def test_record_manager(self):
         RecordManager.insert('gg', '<idi', (1, 3.0, 4))
         RecordManager.insert('gg', '<idi', (-1, 3.5, -1))
-        self.assertEqual(RecordManager.select('gg', '<idi', 1), (-1, 3.5, -1))
-        RecordManager.update('gg', '<idi', (1, 3.0, 4), 1)
-        self.assertEqual(RecordManager.select('gg', '<idi', 1), (1, 3.0, 4))
-        RecordManager.delete('gg', '<idi', 1)
+        self.assertEqual(RecordManager.select('gg', '<idi', with_index=True, record_offset=1),
+                         (-1, 3.5, -1))
+        RecordManager.update('gg', '<idi', (1, 3.0, 4), with_index=True, record_offset=1)
+        self.assertEqual(RecordManager.select('gg', '<idi', with_index=True, record_offset=1),
+                         (1, 3.0, 4))
+        RecordManager.delete('gg', '<idi', with_index=True, record_offset=1)
         with self.assertRaises(RuntimeError):
-            RecordManager.select('gg', '<idi', 1)
-            RecordManager.update('gg', '<idi', (1, 2.0, 3), 1)
-
+            RecordManager.select('gg', '<idi', with_index=True, record_offset=1)
+            RecordManager.update('gg', '<idi', (1, 2.0, 3), with_index=True, record_offset=1)
 
     def test_records_with_string(self):
         RecordManager.insert('ggg', '<idi4s', (1, 2.0, 3, 'temps'))
         # todo: check the length of string in the given attributes ?
-        self.assertEqual(RecordManager.select('ggg', '<idi4s', 0), (1, 2.0, 3, 'temp'))
+        self.assertEqual(RecordManager.select('ggg', '<idi4s', with_index=True, record_offset=0),
+                         (1, 2.0, 3, 'temp'))
         RecordManager.insert('ggg', '<idi4s', (1, 2.0, 3, 'no'))  # less than maximum length
-        self.assertEqual(RecordManager.select('ggg', '<idi4s', 1), (1, 2.0, 3, 'no'))
-        RecordManager.update('ggg', '<idi4s', (1, 2.0, 3, 'nono'), 1)
-        self.assertEqual(RecordManager.select('ggg', '<idi4s', 1), (1, 2.0, 3, 'nono'))
-        RecordManager.delete('ggg', '<idi4s', 1)
-        RecordManager.delete('ggg', '<idi4s', 0)
+        self.assertEqual(RecordManager.select('ggg', '<idi4s', with_index=True, record_offset=1),
+                         (1, 2.0, 3, 'no'))
+        RecordManager.update('ggg', '<idi4s', (1, 2.0, 3, 'nono'), with_index=True, record_offset=1)
+        self.assertEqual(RecordManager.select('ggg', '<idi4s', with_index=True, record_offset=1),
+                         (1, 2.0, 3, 'nono'))
+        RecordManager.delete('ggg', '<idi4s', with_index=True, record_offset=1)
+        RecordManager.delete('ggg', '<idi4s', with_index=True, record_offset=0)
         with self.assertRaises(RuntimeError):
-            RecordManager.select('ggg', '<idi4s', 0)
-            RecordManager.update('ggg', '<idi4s', (1, 2.0, 3, 'nono'), 1)
+            RecordManager.select('ggg', '<idi4s', with_index=True, record_offset=0)
+            RecordManager.update('ggg', '<idi4s', (1, 2.0, 3, 'nono'), with_index=True, record_offset=1)
 
     def test_repeat_file(self):
         with self.assertRaises(RuntimeError):
             RecordManager.init_table('foo')
         with self.assertRaises(RuntimeError):
             RecordManager.init_table('gg')
+
+    def test_without_index(self):
+        RecordManager.insert('foo3', 'i4sd', (1, 'abcd', 1.0))
+        RecordManager.insert('foo3', 'i4sd', (1, 'bcde', 1.0))
+        conditions = dict()
+        conditions[0] = {'=': 1}
+        self.assertEqual(RecordManager.select('foo3', 'i4sd', with_index=False, conditions=conditions),
+                         [(1, 'abcd', 1.0), (1, 'bcde', 1.0)])
+        RecordManager.delete('foo3', 'i4sd', with_index=False, conditions=conditions)
+        self.assertEqual(RecordManager.select('foo3', 'i4sd', with_index=False, conditions=conditions),
+                         [])
+        RecordManager.insert('foo3', 'i4sd', (1, 'abcd', 1.0))
+        RecordManager.insert('foo3', 'i4sd', (1, 'bcde', 1.0))
+        del conditions[0]
+        conditions[1] = {'=': 'abcd'}
+        RecordManager.update('foo3', 'i4sd', (2, 'cccc', 1.0), with_index=False,
+                             conditions=conditions)
+        del conditions[1]
+        conditions[2] = {'=':1.0}
+        self.assertEqual(RecordManager.select('foo3', 'i4sd', with_index=False, conditions=conditions),
+                         [(1, 'bcde', 1.0), (2, 'cccc', 1.0)])
 
 
 if __name__ == '__main__':
