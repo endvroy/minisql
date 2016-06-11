@@ -111,7 +111,7 @@ def init():
     os.makedirs('schema/tables', exist_ok=True)
 
 
-@lru_cache()
+@lru_cache(maxsize=1)
 def load_metadata():
     try:
         with open('schema/metadata.pickle', 'rb') as file:
