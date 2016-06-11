@@ -131,17 +131,18 @@ def node_factory(fmt):
                 block_offset = self.total_blocks + 1
                 block = self.manager.get_file_block(self.index_file_name, block_offset)
                 self.total_blocks += 1
-                return block, block_offset
+                return block
+
+
 
         def insert(self, key, value):
             if self.root is None:
-                block, block_offset = self._get_free_block()
+                block = self._get_free_block()
                 with pin(block):
-                    self.root = block_offset
+                    self.root = block.offset
                     node = Node(is_leaf=True,
                                 keys=[key],
-                                children=[value, 0],
-                                next_deleted=0)
+                                children=[value, 0])
                     block.write(bytes(node))
             else:
                 node_block_offset = self.root
@@ -150,20 +151,25 @@ def node_factory(fmt):
                     node_block = self.manager.get_file_block(self.index_file_name, node_block_offset)
                     with pin(node_block):
                         node = Node.frombytes(node_block.read())
-                        if node.is_leaf:  # start inserting
+                        if not node.is_leaf:  # continue searching
+                            child_index = bisect.bisect_right(node.keys, key)
+                            node_block_offset = node.children[child_index]
+                            path_to_root.append(node_block_offset)
+
+                        else:  # start inserting
                             node.insert(key, value)
                             if len(node.keys) <= node.n:
                                 node_block.write(bytes(node))
                                 break
                             else:  # split
                                 new_node = node.split()
-                                new_block, new_block_offset = self._get_free_block()
-                                node.children.append(new_block_offset)
+                                new_block = self._get_free_block()
+                                node.children.append(new_block.offset)
                                 node_block.write(bytes(node))
                                 with pin(new_block):
                                     new_block.write(bytes(new_node))
 
-                                key, value = new_node.keys[0], new_block_offset
+                                key, value = new_node.keys[0], new_block.offset
                                 while path_to_root:  # recursively insert into parent
                                     node_block_offset = path_to_root.pop()
                                     node_block = self.manager.get_file_block(self.index_file_name,
@@ -176,25 +182,20 @@ def node_factory(fmt):
                                             break
                                         else:
                                             new_node = node.split()
-                                            new_block, new_block_offset = self._get_free_block()
+                                            new_block, new_block.offset = self._get_free_block()
                                             with pin(new_block):
                                                 new_block.write(bytes(new_node))
-                                            key, value = node.keys.pop(), new_block_offset
+                                            key, value = node.keys.pop(), new_block.offset
                                             if not path_to_root:
                                                 new_root_block, new_root_offset = self._get_free_block()
                                                 with pin(new_root_block):
                                                     new_root_node = Node(False,
                                                                          keys=[node.keys.pop()],
-                                                                         children=[node_block_offset, new_block_offset])
+                                                                         children=[node_block_offset, new_block.offset])
                                                     new_root_block.write(bytes(new_root_node))
                                                     self.root = new_root_offset
 
                             break
-
-                        else:  # continue searching
-                            child_index = bisect.bisect_right(node.keys, key)
-                            node_block_offset = node.children[child_index]
-                            path_to_root.append(node_block_offset)
 
         def delete(self, key):
             pass
