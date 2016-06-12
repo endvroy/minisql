@@ -27,21 +27,21 @@ class TestBPlusTree(unittest.TestCase):
 
     def test_split_leaf(self):
         Node = node_factory('<i')
-        node = Node(True, [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 5])
+        node = Node(True, [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 42])
         Node.n = 4
-        new_node = node.split()
+        new_node = node._split()
         self.assertEqual(node.is_leaf, True)
-        self.assertEqual(node.keys, [0, 1])
-        self.assertEqual(node.children, [0, 1])
+        self.assertEqual(node.keys, [0, 1, 2])
+        self.assertEqual(node.children, [0, 1, 2])
         self.assertEqual(new_node.is_leaf, True)
-        self.assertEqual(new_node.keys, [2, 3, 4])
-        self.assertEqual(new_node.children, [2, 3, 4, 5])
+        self.assertEqual(new_node.keys, [3, 4])
+        self.assertEqual(new_node.children, [3, 4, 42])
 
     def test_split_internal(self):
         Node = node_factory('<i')
         node = Node(False, [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 5])
         Node.n = 4
-        new_node = node.split()
+        new_node = node._split()
         self.assertEqual(node.is_leaf, False)
         self.assertEqual(node.keys, [0, 1, 2])
         self.assertEqual(node.children, [0, 1, 2])
@@ -62,6 +62,9 @@ class TestBPlusTree(unittest.TestCase):
         node.insert(3, 518)
         self.assertEqual(node.keys, [0, 2, 3, 4, 6, 8])
         self.assertEqual(node.children, [0, 1, 518, 2, 3, 4, 5])
+
+    def test_leaf_split_and_write(self):
+        pass
 
 
 if __name__ == '__main__':
