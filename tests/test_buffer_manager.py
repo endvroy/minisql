@@ -4,15 +4,15 @@ import time
 from buffer_manager import pin, Block, BufferManager
 
 
-def prepare_file():
-    with open('foo', 'wb') as file:
-        file.write(b'Hello World')
-
-
 class TestBlock(unittest.TestCase):
-    def test_block(self):
-        prepare_file()
+    def setUp(self):
+        with open('foo', 'wb') as file:
+            file.write(b'Hello World')
 
+    def tearDown(self):
+        os.remove('foo')
+
+    def test_block(self):
         block = Block(5, 'foo', 0)
         self.assertEqual(block.read(), b'Hello')  # test read
         block.write(b'abcde')
@@ -31,7 +31,6 @@ class TestBlock(unittest.TestCase):
         block.flush()
 
     def test_partial_read(self):
-        prepare_file()
         block = Block(5, 'foo', 2)  # test partial read
         self.assertEqual(block.effective_bytes, 1)
         self.assertEqual(block.read(), b'd')
@@ -42,7 +41,6 @@ class TestBlock(unittest.TestCase):
             self.assertEqual(file.read(), b'Hello WorlD')
 
     def test_expanding_write(self):
-        prepare_file()
         block = Block(5, 'foo', 2)
         block.write(b'D12')
         self.assertEqual(block.effective_bytes, 3)
@@ -51,7 +49,6 @@ class TestBlock(unittest.TestCase):
             self.assertEqual(file.read(), b'Hello WorlD12')
 
     def test_overflow_write(self):
-        prepare_file()
         block = Block(5, 'foo', 2)
         with self.assertRaises(RuntimeError):
             block.write(b'whos your daddy')
@@ -67,8 +64,14 @@ class TestBlock(unittest.TestCase):
 
 
 class TestContextManager(unittest.TestCase):
+    def setUp(self):
+        with open('foo', 'wb') as file:
+            file.write(b'Hello World')
+
+    def tearDown(self):
+        os.remove('foo')
+
     def test_pin(self):
-        prepare_file()
         block = Block(5, 'foo', 0)
         with pin(block):
             self.assertEqual(block.pin_count, 1)
@@ -77,10 +80,17 @@ class TestContextManager(unittest.TestCase):
 
 
 class TestBufferManager(unittest.TestCase):
+    def setUp(self):
+        with open('foo', 'wb') as file:
+            file.write(b'Hello World')
+
+    def tearDown(self):
+        os.remove('foo')
+
     def test_buffer_manager(self):
         BufferManager.block_size = 5
         BufferManager.total_blocks = 2
-        prepare_file()
+
         manager = BufferManager()
         a = manager.get_file_block('foo', 0)
         a.pin()
