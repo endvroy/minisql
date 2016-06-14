@@ -1,6 +1,5 @@
 import sqllex
 import ply.yacc as yacc
-from collections import namedtuple
 
 tokens = sqllex.tokens
 
@@ -24,13 +23,16 @@ def p_create_statement(p):
         create_statement : create_table
                           | create_index
     '''
-    p[0] = p[1]['type']
-    if p[0] == 'create_index':
+    type_code = p[1]['type']
+    if type_code == 'create_index':
         print('is {}'.format(p[0]))
         print(p[1])
-    elif p[0] == 'create_table':
+        # todo: call the api to create index
+    elif type_code == 'create_table':
         print('is {}'.format(p[0]))
         print(p[1])
+        # todo: call the api to create table
+
 
 def p_insert_statement(p):
     '''
@@ -39,13 +41,23 @@ def p_insert_statement(p):
     print('in insert statement')
     table_name = p[3]
     value_list = p[6]
-
+    print('table name is {} and value list is {}'.format(table_name, value_list))
+    # todo : call the api to insert record
 
 def p_select_statement(p):
     '''
         select_statement : select_all
                         | conditional_select
     '''
+    type_code = p[1]['type']
+    if type_code == 'select_all':
+        print('in select all')
+        print(p[1])
+        # todo : call the api to select all
+    elif type_code == 'conditional_select':
+        print('in conditional select')
+        print(p[1])
+        # todo : call the api to select with conditions
 
 
 
@@ -54,21 +66,38 @@ def p_delete_statement(p):
         delete_statement : delete_all
                         | conditional_delete
     '''
-
+    type_code = p[1]['type']
+    if type_code == 'delete_all':
+        print('in delete_all')
+        print(p[1])
+        # todo : call the api to delete all records of the table
+    elif type_code == 'conditional_delete':
+        print('in conditional delete')
+        print(p[1])
+        # todo : call the api to delete with conditions
 
 def p_drop_statement(p):
     '''
         drop_statement : drop_table
                         | drop_index
     '''
+    type_code = p[1]['type']
+    if type_code == 'drop_table':
+        print('in drop table')
+        print(p[1])
+        # todo : call the api to drop the specified table
+    elif type_code == 'drop_index':
+        print('in drop index')
+        print(p[1])
+        # todo: call the api to drop the specified index
 
 
 def p_quit_statement(p):
     '''
         quit_statement : QUIT SEMICOLON
     '''
-    #todo: quit Minisql
-
+    print('in quit')
+    # todo: quit Minisql
 
 
 # Rules for create statement
@@ -102,6 +131,7 @@ def p_create_index(p):
     dict['column_name'] = p[7]
     p[0] = dict
 
+
 def p_column_list(p):
     '''
         column_list : column
@@ -124,6 +154,7 @@ def p_column(p):
     if len(p) == 4:
         p[0][2] = True
 
+
 def p_column_type(p):
     '''
         column_type : INT
@@ -138,11 +169,13 @@ def p_column_type(p):
     elif type_code == 'char':
         p[0] = ('char', p[3])
 
+
 def p_primary_clause(p):
     '''
         primary_clause : PRIMARY KEY LPAREN ID RPAREN
     '''
-    p[0] = p[4] # the column name
+    p[0] = p[4]  # the column name
+
 
 # Rules for insert statement
 def p_value_list(p):
@@ -157,6 +190,7 @@ def p_value_list(p):
         p[0] += p[1]
         p[0].append(p[3])
 
+
 def p_value(p):
     '''
         value : ICONST
@@ -165,21 +199,28 @@ def p_value(p):
     '''
     p[0] = p[1]
 
-#Rules for select statement
+
+# Rules for select statement
 def p_select_all(p):
     '''
         select_all : SELECT STAR FROM ID SEMICOLON
     '''
-    p[0] = p[4]
+    dict = {}
+    dict['type'] = 'select_all'
+    dict['table_name'] = p[4]
+    p[0] = dict
+
 
 def p_conditional_select(p):
     '''
         conditional_select : SELECT STAR FROM ID WHERE conditions SEMICOLON
     '''
     dict = {}
+    dict['type'] = 'conditional_select'
     dict['table_name'] = p[4]
     dict['conditions'] = p[6]
     p[0] = dict
+
 
 def p_conditions(p):
     '''
@@ -187,8 +228,13 @@ def p_conditions(p):
                     | conditions AND condition
                     | conditions OR condition
     '''
-    #todo: not complete yet
-
+    p[0] = []       # [condition, AND/OR, condition, AND/OR.....]
+    if len(p) == 2:
+        p[0].append(p[1])
+    elif len(p) == 4:
+        p[0] += p[1]
+        p[0].append(p[2])
+        p[0].append(p[3])
 
 def p_condition(p):
     '''
@@ -199,39 +245,56 @@ def p_condition(p):
                     | ID LE value
                     | ID NE value
     '''
-    # todo: not complete yet
+    p[0] = (p[1], p[2], p[3])
 
-#Rules for delete statement
+
+# Rules for delete statement
 
 def p_delete_all(p):
     '''
         delete_all : DELETE FROM ID SEMICOLON
     '''
-    p[0] = p[3] # the deleted table name
+    dict = {}
+    dict['type'] = 'delete_all'
+    dict['table_id'] = p[3]
+    p[0] = dict
+
 
 def p_conditional_delete(p):
     '''
         conditional_delete : DELETE FROM ID WHERE conditions SEMICOLON
     '''
-    p[0] = (p[3], p[5])
+    dict = {}
+    dict['type'] = 'conditional_delete'
+    dict['table_name'] = p[3]
+    dict['conditions'] = p[5]
+    p[0] = dict
 
-#Rules for drop statement
+
+
+# Rules for drop statement
 def p_drop_table(p):
     '''
         drop_table : DROP TABLE ID SEMICOLON
     '''
-    p[0] = ('drop_table', p[3])
+    dict = {}
+    dict['type'] = 'drop_table'
+    dict['table_name'] = p[3]
+    p[0] = dict
 
 def p_drop_index(p):
     '''
         drop_index : DROP INDEX ID SEMICOLON
     '''
-    p[0] = ('drop_index', p[3])
+    dict = {}
+    dict['type'] = 'drop_index'
+    dict['index_name'] = p[3]
+    p[0] = dict
 
 
 # Others
 def p_error(p):
-    print('Oooooooooooooops!!')
+    print('Syntax error!')
 
 
 parser = yacc.yacc(method='LALR')
@@ -240,7 +303,6 @@ if __name__ == '__main__':
     while True:
         try:
             s = input('MiniSQL>  ')
-            pass
         except EOFError:
             break
         parser.parse(s)
