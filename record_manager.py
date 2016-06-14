@@ -157,7 +157,7 @@ class Record:
 
     @staticmethod
     def _check_condition(record, conditions):
-        if record[-2] == b'0': #check the valid bit, return false when meet empty record
+        if record[-2] == b'0':  # check the valid bit, return false when meet empty record
             return False
         for position, condition in conditions.items():
             value = record[position]
