@@ -157,24 +157,24 @@ class Record:
 
     @staticmethod
     def _check_condition(record, conditions):
-        if record[-2] is b'0': #check the valid bit, return false when meet empty record
+        if record[-2] == b'0': #check the valid bit, return false when meet empty record
             return False
         for position, condition in conditions.items():
             value = record[position]
             for operator_type, value_restriction in condition.items():
-                if operator_type is '=':
+                if operator_type == '=':
                     if value != value_restriction:
                         return False
-                elif operator_type is '>':
+                elif operator_type == '>':
                     if value <= value_restriction:
                         return False
-                elif operator_type is '<':
+                elif operator_type == '<':
                     if value >= value_restriction:
                         return False
         return True
 
     def _generate_new_data(self, records, blk_offset):
-        if blk_offset is 0:
+        if blk_offset == 0:
             data = bytearray(self.header_struct.size)
         else:
             data = bytearray()
@@ -186,7 +186,7 @@ class Record:
         upper_bound = len(data)
         if (upper_bound - self.header_struct.size) % self.record_struct.size != 0:
             upper_bound -= self.record_struct.size
-        if blk_offset is 0:  # is the first block, need to consider the header
+        if blk_offset == 0:  # is the first block, need to consider the header
             lower_bound = self.header_struct.size
         else:  # not the first block, all data are records
             lower_bound = 0
@@ -220,7 +220,7 @@ class RecordManager:
 
     header_format = '<ii'  # free_list_head and records_tail.
     header_struct = Struct(header_format)
-    file_dir = './schema/tables/'
+    file_dir = './'
 
     @classmethod
     def init_table(cls, table_name):
@@ -283,3 +283,7 @@ class RecordManager:
             if conditions is None:
                 raise RuntimeError('Not specify condition when not using index')
             return record.scanning_select(conditions)
+
+    @classmethod
+    def set_file_dir(cls, file_dir):
+        cls.file_dir = file_dir

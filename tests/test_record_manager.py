@@ -2,27 +2,24 @@ import unittest
 from record_manager import RecordManager, Record
 import os
 
-os.chdir('..')
-
-'''
-# Called only once to initialize table files
- RecordManager.init_table('foo')
- RecordManager.init_table('gg')
- RecordManager.init_table('ggg')
- RecordManager.init_table('foo2')
- RecordManager.init_table('foo3')
-'''
-
 
 class TestRecord(unittest.TestCase):
+    def setUp(self):
+        RecordManager.init_table('foo')
+        RecordManager.init_table('foo2')
+
+    def tearDown(self):
+        os.remove('foo.table')
+        os.remove('foo2.table')
+
     def test_calc(self):
-        record = Record('./schema/tables/foo.table', '<i')
+        record = Record('foo.table', '<i')
         self.assertEqual(record._calc(3), (0, 3))
         self.assertEqual(record._calc(454), (1, 0))
         self.assertEqual(record._calc(909), (2, 0))
 
     def test_header(self):
-        record = Record('./schema/tables/foo.table', '<idi')
+        record = Record('foo.table', '<idi')
         self.assertEqual(record._parse_header(), (-1, 0))
         record.first_free_rec = 2
         record.rec_tail = 2
@@ -34,7 +31,7 @@ class TestRecord(unittest.TestCase):
         self.assertEqual(record._parse_header(), (-1, 0))
 
     def test_record(self):
-        record = Record('./schema/tables/foo.table', '<idi')
+        record = Record('foo.table', '<idi')
         record.insert((1, 2.0, -1))
         record.insert((-1, -1.5, 1))
         self.assertEqual(record.read(0), (1, 2.0, -1))
@@ -58,7 +55,7 @@ class TestRecord(unittest.TestCase):
         self.assertEqual(record.read(1), (1, 1.3, -1))
 
     def test_attributes_conversion(self):
-        record = Record('./schema/tables/foo.table', '<idi')
+        record = Record('foo.table', '<idi')
         self.assertEqual((record._convert_str_to_bytes((1, 'abcd', 3, 'qweqwe'))),
                          (1, b'abcd', 3, b'qweqwe'))
 
@@ -66,7 +63,7 @@ class TestRecord(unittest.TestCase):
                          (1, 'abcd', 3, 'qweqwe'))
 
     def test_without_index(self):
-        record = Record('./schema/tables/foo2.table', '<id5s')
+        record = Record('foo2.table', '<id5s')
         record.insert((1, 1.0, 'abcde'))
         record.insert((1, 1.0, 'bcdef'))
         record.insert((1, 1.0, 'cdefg'))
@@ -92,6 +89,16 @@ class TestRecord(unittest.TestCase):
 
 
 class TestRecordManager(unittest.TestCase):
+    def setUp(self):
+        RecordManager.init_table('gg')
+        RecordManager.init_table('ggg')
+        RecordManager.init_table('foo3')
+
+    def tearDown(self):
+        os.remove('gg.table')
+        os.remove('ggg.table')
+        os.remove('foo3.table')
+
     def test_record_manager(self):
         RecordManager.insert('gg', '<idi', (1, 3.0, 4))
         RecordManager.insert('gg', '<idi', (-1, 3.5, -1))
@@ -124,7 +131,7 @@ class TestRecordManager(unittest.TestCase):
 
     def test_repeat_file(self):
         with self.assertRaises(RuntimeError):
-            RecordManager.init_table('foo')
+            RecordManager.init_table('foo3')
         with self.assertRaises(RuntimeError):
             RecordManager.init_table('gg')
 
@@ -145,7 +152,7 @@ class TestRecordManager(unittest.TestCase):
         RecordManager.update('foo3', 'i4sd', (2, 'cccc', 1.0), with_index=False,
                              conditions=conditions)
         del conditions[1]
-        conditions[2] = {'=':1.0}
+        conditions[2] = {'=': 1.0}
         self.assertEqual(RecordManager.select('foo3', 'i4sd', with_index=False, conditions=conditions),
                          [(1, 'bcde', 1.0), (2, 'cccc', 1.0)])
 
