@@ -1,7 +1,19 @@
 import bisect
 from struct import Struct
 from math import ceil
+from collections.abc import Sequence
 from buffer_manager import BufferManager, pin
+
+
+def _convert_to_tuple(element):
+    if isinstance(element, Sequence):
+        return tuple(element)
+    else:
+        return element,
+
+
+def _convert_to_tuple_list(keys):
+    return [_convert_to_tuple(x) for x in keys]
 
 
 def _encode(element):
@@ -45,7 +57,7 @@ def node_factory(fmt):
 
         def __init__(self, is_leaf, keys, children, next_deleted=0):
             self.is_leaf = is_leaf
-            self.keys = list(keys)
+            self.keys = _convert_to_tuple_list(keys)
             self.children = list(children)
             self.next_deleted = next_deleted
 
@@ -67,11 +79,13 @@ def node_factory(fmt):
             return cls(is_leaf, keys, children, next_deleted)
 
         def insert(self, key, value):
+            key = _convert_to_tuple(key)
             insert_position = bisect.bisect(self.keys, key)
             self.keys.insert(insert_position, key)
             self.children.insert(insert_position, value)
 
         def delete(self, key):
+            key = _convert_to_tuple(key)
             child_position = bisect.bisect_right(self.keys, key)
             if child_position > 0 and self.keys[child_position - 1] == key:
                 child = self.children[child_position]
@@ -81,18 +95,16 @@ def node_factory(fmt):
             else:
                 raise ValueError('key {} not in this node'.format(key))
 
-        def fuse_with_and_write(self, other, block):
+        def fuse_with(self, other):
             if self.is_leaf and other.is_leaf:
                 self.keys.extend(other.keys)
                 del self.children[-1]
                 self.children.extend(other.children)
-                with pin(block):
-                    block.write(bytes(self))
+
             elif not self.is_leaf and not other.is_leaf:
                 self.keys.extend(other.keys)
                 self.children.extend(other.children)
-                with pin(block):
-                    block.write(bytes(self))
+
             else:
                 raise ValueError('can\'t fuse a leaf node with a non-leaf node')
 
@@ -167,6 +179,7 @@ def node_factory(fmt):
                 self.first_deleted_block = block.block_offset
 
         def _find_position(self, key):
+            key = _convert_to_tuple(key)
             node_block_offset = self.root
             path_to_parents = []
             while True:  # find the insert position
@@ -181,6 +194,7 @@ def node_factory(fmt):
                         path_to_parents.append(node_block_offset)
 
         def find(self, key):
+            key = _convert_to_tuple(key)
             if self.root is None:
                 return None
             node, node_block, path_to_parents = self._find_position(key)
@@ -189,6 +203,7 @@ def node_factory(fmt):
                 return node.children[key_position]
 
         def _insert_into_parents(self, key, value, path_to_parents):
+            key = _convert_to_tuple(key)
             while True:  # recursively insert into parent
                 node_block_offset = path_to_parents.pop()
                 node_block = self.manager.get_file_block(self.index_file_name,
@@ -214,6 +229,7 @@ def node_factory(fmt):
                             break
 
         def insert(self, key, value):
+            key = _convert_to_tuple(key)
             if self.root is None:
                 block = self._get_free_block()
                 with pin(block):
@@ -286,7 +302,9 @@ def node_factory(fmt):
                 right_sibling = None  # no right sibling
 
             if left_sibling is not None:  # fuse with left sibling
-                left_sibling.fuse_with_and_write(node, left_sibling_block)
+                left_sibling.fuse_with(node)
+                with pin(left_sibling_block):
+                    left_sibling_block.write(bytes(left_sibling))
                 self._delete_node(node, block)
                 del parent.keys[my_position - 1]
                 del parent.children[my_position]
@@ -295,7 +313,9 @@ def node_factory(fmt):
                 else:
                     self._handle_underflow(parent, parent_block, path_to_parents)
             else:  # fuse with right sibling
-                node.fuse_with_and_write(right_sibling, right_sibling_block)
+                node.fuse_with(right_sibling)
+                with pin(block):
+                    block.write(bytes())
                 self._delete_node(right_sibling, right_sibling_block)
                 del parent.keys[my_position]
                 del parent.children[my_position + 1]
@@ -305,6 +325,7 @@ def node_factory(fmt):
                     self._handle_underflow(parent, parent_block, path_to_parents)
 
         def delete(self, key):
+            key = _convert_to_tuple(key)
             node, node_block, path_to_parents = self._find_position(key)
             key_position = bisect.bisect(node.keys, key)
             if key_position < len(node.keys) and node.keys[key_position] == key:  # key match

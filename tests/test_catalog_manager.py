@@ -1,8 +1,6 @@
 import unittest
 from catalog_manager import *
-import os
-
-os.chdir('..')
+import os, shutil
 
 
 class TestColumn(unittest.TestCase):
@@ -12,6 +10,12 @@ class TestColumn(unittest.TestCase):
 
 
 class TestLoad(unittest.TestCase):
+    def setUp(self):
+        os.makedirs('schema/tables', exist_ok=True)
+
+    def tearDown(self):
+        shutil.rmtree('schema')
+
     def test_load(self):
         meta1 = load_metadata()
         meta2 = load_metadata()
