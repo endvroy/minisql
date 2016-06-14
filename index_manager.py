@@ -80,17 +80,17 @@ def node_factory(fmt):
 
         def insert(self, key, value):
             key = _convert_to_tuple(key)
-            insert_position = bisect.bisect(self.keys, key)
+            insert_position = bisect.bisect_left(self.keys, key)
             self.keys.insert(insert_position, key)
             self.children.insert(insert_position, value)
 
         def delete(self, key):
             key = _convert_to_tuple(key)
-            child_position = bisect.bisect_right(self.keys, key)
-            if child_position > 0 and self.keys[child_position - 1] == key:
-                child = self.children[child_position]
-                del self.keys[child_position - 1]
-                del self.children[child_position]
+            key_position = bisect.bisect_left(self.keys, key)
+            if key_position < len(self.keys) and self.keys[key_position] == key:
+                child = self.children[key_position]
+                del self.keys[key_position]
+                del self.children[key_position]
                 return key, child
             else:
                 raise ValueError('key {} not in this node'.format(key))
@@ -141,195 +141,221 @@ def node_factory(fmt):
                     new_block.write(bytes(new_node))
                     return key, new_block.block_offset
 
-    class Tree:
-        def __init__(self, index_file_name):
-            self.root = None
-            self.index_file_name = index_file_name
-            self.manager = BufferManager()
-            self.meta_struct = Struct('<2i')
-            meta_block = self.manager.get_file_block(self.index_file_name, 0)
+    return Node
+
+
+class IndexManager:
+    def __init__(self, index_file_path, fmt):
+        self.Node = node_factory(fmt)
+        self.root = None
+        self.index_file_path = index_file_path
+        self.manager = BufferManager()
+        self.meta_struct = Struct('<3i')
+        try:
+            meta_block = self.manager.get_file_block(self.index_file_path, 0)
             with pin(meta_block):
-                self.total_blocks, self.first_deleted_block = self.meta_struct.unpack(
+                self.total_blocks, self.first_deleted_block, self.root = self.meta_struct.unpack(
                     meta_block.read()[:self.meta_struct.size])
+        except FileNotFoundError:
+            self.total_blocks, self.first_deleted_block, self.root = 1, 0, 0
+            with open(index_file_path, 'wb') as f:
+                f.write(self.meta_struct.pack(self.total_blocks,
+                                              self.first_deleted_block,
+                                              self.root).ljust(4096, b'\0'))
 
-        def _find_free_block_offset(self):
-            if self.first_deleted_block > 0:
-                return self.first_deleted_block
-            else:
-                return self.total_blocks + 1
+    def dump_header(self):
+        meta_block = self.manager.get_file_block(self.index_file_path, 0)
+        with pin(meta_block):
+            meta_block.write(self.meta_struct.pack(self.total_blocks,
+                                                   self.first_deleted_block,
+                                                   self.root).ljust(4096, b'\0'))
 
-        def _get_free_block(self):
-            if self.first_deleted_block > 0:
-                block_offset = self.first_deleted_block
-                block = self.manager.get_file_block(self.index_file_name, block_offset)
-                s = Struct('<i')
-                next_deleted = s.unpack(block.read()[:s.size])[0]
-                self.first_deleted_block = next_deleted
-                return block, block_offset
-            else:
-                block_offset = self.total_blocks + 1
-                block = self.manager.get_file_block(self.index_file_name, block_offset)
-                self.total_blocks += 1
-                return block
+    def _find_free_block_offset(self):
+        if self.first_deleted_block > 0:
+            return self.first_deleted_block
+        else:
+            return self.total_blocks
 
-        def _delete_node(self, node, block):
-            with pin(block):
-                node.next_deleted = self.first_deleted_block
-                block.write(bytes(node))
-                self.first_deleted_block = block.block_offset
+    def _get_free_block(self):
+        if self.first_deleted_block > 0:
+            block_offset = self.first_deleted_block
+            block = self.manager.get_file_block(self.index_file_path, block_offset)
+            s = Struct('<i')
+            next_deleted = s.unpack(block.read()[:s.size])[0]
+            self.first_deleted_block = next_deleted
+            return block
+        else:
+            block_offset = self.total_blocks
+            block = self.manager.get_file_block(self.index_file_path, block_offset)
+            self.total_blocks += 1
+            return block
 
-        def _find_position(self, key):
-            key = _convert_to_tuple(key)
-            node_block_offset = self.root
-            path_to_parents = []
-            while True:  # find the insert position
-                node_block = self.manager.get_file_block(self.index_file_name, node_block_offset)
-                with pin(node_block):
-                    node = Node.frombytes(node_block.read())
-                    if node.is_leaf:
-                        return node, node_block, path_to_parents
-                    else:  # continue searching
-                        child_index = bisect.bisect_right(node.keys, key)
-                        node_block_offset = node.children[child_index]
-                        path_to_parents.append(node_block_offset)
+    def _delete_node(self, node, block):
+        with pin(block):
+            node.next_deleted = self.first_deleted_block
+            block.write(bytes(node))
+            self.first_deleted_block = block.block_offset
 
-        def find(self, key):
-            key = _convert_to_tuple(key)
-            if self.root is None:
-                return None
+    def _find_position(self, key):
+        key = _convert_to_tuple(key)
+        node_block_offset = self.root
+        path_to_parents = []
+        while True:  # find the insert position
+            node_block = self.manager.get_file_block(self.index_file_path, node_block_offset)
+            with pin(node_block):
+                node = self.Node.frombytes(node_block.read())
+                if node.is_leaf:
+                    return node, node_block, path_to_parents
+                else:  # continue searching
+                    child_index = bisect.bisect_right(node.keys, key)
+                    node_block_offset = node.children[child_index]
+                    path_to_parents.append(node_block_offset)
+
+    def find(self, key):
+        key = _convert_to_tuple(key)
+        if self.root == 0:
+            return None
+        else:
             node, node_block, path_to_parents = self._find_position(key)
-            key_position = bisect.bisect(node.keys, key)
+            key_position = bisect.bisect_left(node.keys, key)
             if key_position < len(node.keys) and node.keys[key_position] == key:
                 return node.children[key_position]
 
-        def _insert_into_parents(self, key, value, path_to_parents):
-            key = _convert_to_tuple(key)
-            while True:  # recursively insert into parent
-                node_block_offset = path_to_parents.pop()
-                node_block = self.manager.get_file_block(self.index_file_name,
-                                                         node_block_offset)
-                with pin(node_block):
-                    node = Node.frombytes(node_block)
-                    node.insert(key, value)
-                    if len(node.keys) <= node.n:
-                        node_block.write(bytes(node))
-                        break
-                    else:  # split
-                        new_block = self._get_free_block()
-                        key, value = node.split_and_write(node_block, new_block)
-
-                        if not path_to_parents:  # the root split; need a new root
-                            new_root_block = self._get_free_block()
-                            with pin(new_root_block):
-                                new_root_node = Node(False,
-                                                     keys=[key],
-                                                     children=[node_block_offset, new_block.block_offset])
-                                new_root_block.write(bytes(new_root_node))
-                            self.root = new_root_block.block_offset
-                            break
-
-        def insert(self, key, value):
-            key = _convert_to_tuple(key)
-            if self.root is None:
-                block = self._get_free_block()
-                with pin(block):
-                    self.root = block.block_offset
-                    node = Node(is_leaf=True,
-                                keys=[key],
-                                children=[value, 0])
-                    block.write(bytes(node))
-            else:
-                node, node_block, path_to_parents = self._find_position(key)
+    def _insert_into_parents(self, key, value, path_to_parents):
+        key = _convert_to_tuple(key)
+        while True:  # recursively insert into parent
+            node_block_offset = path_to_parents.pop()
+            node_block = self.manager.get_file_block(self.index_file_path,
+                                                     node_block_offset)
+            with pin(node_block):
+                node = self.Node.frombytes(node_block)
                 node.insert(key, value)
                 if len(node.keys) <= node.n:
                     node_block.write(bytes(node))
-                    return
+                    break
                 else:  # split
                     new_block = self._get_free_block()
                     key, value = node.split_and_write(node_block, new_block)
-                    self._insert_into_parents(key, value, path_to_parents)
 
-        def _handle_underflow(self, node, block, path_to_parents):
-            if block.block_offset == self.root:
-                if not node.keys:  # root has no key at all; this node is no longer needed
-                    if node.is_leaf:
-                        self.root = None
-                    else:
-                        self.root = node.children[0]
-                    self._delete_node(node, block)
-                return  # root underflow is not a problem
+                    if not path_to_parents:  # the root split; need a new root
+                        new_root_block = self._get_free_block()
+                        with pin(new_root_block):
+                            new_root_node = self.Node(False,
+                                                      keys=[key],
+                                                      children=[node_block_offset, new_block.block_offset])
+                            new_root_block.write(bytes(new_root_node))
+                        self.root = new_root_block.block_offset
+                        break
 
-            parent_offset = path_to_parents.pop()
-            parent_block = self.manager.get_file_block(self.index_file_name, parent_offset)
-            with pin(parent_block):
-                parent = Node.frombytes(parent_block.read())
-                my_position = bisect.bisect_right(parent.keys, node.keys[0])
+    def insert(self, key, value):
+        key = _convert_to_tuple(key)
+        if self.root == 0:
+            block = self._get_free_block()
+            with pin(block):
+                self.root = block.block_offset
+                node = self.Node(is_leaf=True,
+                                 keys=[key],
+                                 children=[value, 0])
+                block.write(bytes(node))
+        else:
+            node, node_block, path_to_parents = self._find_position(key)
+            node.insert(key, value)
+            if len(node.keys) <= node.n:
+                node_block.write(bytes(node))
+                return
+            else:  # split
+                new_block = self._get_free_block()
+                key, value = node.split_and_write(node_block, new_block)
+                self._insert_into_parents(key, value, path_to_parents)
 
-            if my_position > 0:  # try find the left sibling
-                left_sibling_offset = parent.children[my_position - 1]
-                left_sibling_block = self.manager.get_file_block(self.index_file_name,
-                                                                 left_sibling_offset)
-                with pin(left_sibling_block):
-                    left_sibling = Node.frombytes(left_sibling_block)
-                if len(left_sibling.keys) > ceil(node.n / 2):  # a transfer is possible
-                    node.keys.insert(parent.keys[my_position - 1], 0)
-                    node.children.insert(left_sibling.children.pop())
-                    parent.keys[my_position - 1] = left_sibling.keys.pop()
-                    with pin(block), pin(left_sibling_block), pin(parent_block):
-                        block.write(bytes(node))
-                        left_sibling_block.write(bytes(left_sibling))
-                        parent_block.write(bytes(parent))
-                    return
-            else:
-                left_sibling = None  # no left sibling
-
-            if my_position < len(parent.keys) - 1:  # try find the right sibling
-                right_sibling_offset = parent.children[my_position + 1]
-                right_sibling_block = self.manager.get_file_block(self.index_file_name,
-                                                                  right_sibling_offset)
-                with pin(right_sibling_block):
-                    right_sibling = Node.frombytes(right_sibling_block.read())
-                if len(right_sibling.keys) > ceil(node.n / 2):  # a transfer is possible
-                    node.keys.append(parent.keys[my_position])
-                    node.children.append(right_sibling.children.pop(0))
-                    parent.keys[my_position + 1] = right_sibling.keys.pop(0)
-                    with pin(block), pin(right_sibling_block), pin(parent_block):
-                        block.write(bytes(node))
-                        right_sibling_block.write(bytes(right_sibling))
-                        parent_block.write(bytes(parent))
-                    return
-            else:
-                right_sibling = None  # no right sibling
-
-            if left_sibling is not None:  # fuse with left sibling
-                left_sibling.fuse_with(node)
-                with pin(left_sibling_block):
-                    left_sibling_block.write(bytes(left_sibling))
+    def _handle_underflow(self, node, block, path_to_parents):
+        if block.block_offset == self.root:
+            if not node.keys:  # root has no key at all; this node is no longer needed
+                if node.is_leaf:
+                    self.root = 0
+                else:
+                    self.root = node.children[0]
                 self._delete_node(node, block)
-                del parent.keys[my_position - 1]
-                del parent.children[my_position]
-                if len(parent.keys) >= ceil(node.n / 2):
-                    return
-                else:
-                    self._handle_underflow(parent, parent_block, path_to_parents)
-            else:  # fuse with right sibling
-                node.fuse_with(right_sibling)
-                with pin(block):
-                    block.write(bytes())
-                self._delete_node(right_sibling, right_sibling_block)
-                del parent.keys[my_position]
-                del parent.children[my_position + 1]
-                if len(parent.keys) >= ceil(node.n / 2):
-                    return
-                else:
-                    self._handle_underflow(parent, parent_block, path_to_parents)
+            else:
+                block.write(bytes(node))
+            return  # root underflow is not a problem
 
-        def delete(self, key):
+        parent_offset = path_to_parents.pop()
+        parent_block = self.manager.get_file_block(self.index_file_path, parent_offset)
+        with pin(parent_block):
+            parent = self.Node.frombytes(parent_block.read())
+            my_position = bisect.bisect_right(parent.keys, node.keys[0])
+
+        if my_position > 0:  # try find the left sibling
+            left_sibling_offset = parent.children[my_position - 1]
+            left_sibling_block = self.manager.get_file_block(self.index_file_path,
+                                                             left_sibling_offset)
+            with pin(left_sibling_block):
+                left_sibling = self.Node.frombytes(left_sibling_block)
+            if len(left_sibling.keys) > ceil(node.n / 2):  # a transfer is possible
+                node.keys.insert(parent.keys[my_position - 1], 0)
+                node.children.insert(left_sibling.children.pop())
+                parent.keys[my_position - 1] = left_sibling.keys.pop()
+                with pin(block), pin(left_sibling_block), pin(parent_block):
+                    block.write(bytes(node))
+                    left_sibling_block.write(bytes(left_sibling))
+                    parent_block.write(bytes(parent))
+                return
+        else:
+            left_sibling = None  # no left sibling
+
+        if my_position < len(parent.keys) - 1:  # try find the right sibling
+            right_sibling_offset = parent.children[my_position + 1]
+            right_sibling_block = self.manager.get_file_block(self.index_file_path,
+                                                              right_sibling_offset)
+            with pin(right_sibling_block):
+                right_sibling = self.Node.frombytes(right_sibling_block.read())
+            if len(right_sibling.keys) > ceil(node.n / 2):  # a transfer is possible
+                node.keys.append(parent.keys[my_position])
+                node.children.append(right_sibling.children.pop(0))
+                parent.keys[my_position + 1] = right_sibling.keys.pop(0)
+                with pin(block), pin(right_sibling_block), pin(parent_block):
+                    block.write(bytes(node))
+                    right_sibling_block.write(bytes(right_sibling))
+                    parent_block.write(bytes(parent))
+                return
+        else:
+            right_sibling = None  # no right sibling
+
+        if left_sibling is not None:  # fuse with left sibling
+            left_sibling.fuse_with(node)
+            with pin(left_sibling_block):
+                left_sibling_block.write(bytes(left_sibling))
+            self._delete_node(node, block)
+            del parent.keys[my_position - 1]
+            del parent.children[my_position]
+            if len(parent.keys) >= ceil(node.n / 2):
+                return
+            else:
+                self._handle_underflow(parent, parent_block, path_to_parents)
+        else:  # fuse with right sibling
+            node.fuse_with(right_sibling)
+            with pin(block):
+                block.write(bytes())
+            self._delete_node(right_sibling, right_sibling_block)
+            del parent.keys[my_position]
+            del parent.children[my_position + 1]
+            if len(parent.keys) >= ceil(node.n / 2):
+                return
+            else:
+                self._handle_underflow(parent, parent_block, path_to_parents)
+
+    def delete(self, key):
+        if self.root == 0:
+            raise ValueError('Cannot delete from empty index')
+        else:
             key = _convert_to_tuple(key)
             node, node_block, path_to_parents = self._find_position(key)
-            key_position = bisect.bisect(node.keys, key)
+
+            key_position = bisect.bisect_left(node.keys, key)
             if key_position < len(node.keys) and node.keys[key_position] == key:  # key match
-                node.delete(key)
+                del node.keys[key_position]
+                del node.children[key_position]
                 if len(node.keys) >= ceil(node.n / 2):
                     node_block.write(bytes(node))
                     return
@@ -337,5 +363,3 @@ def node_factory(fmt):
                     self._handle_underflow(node, node_block, path_to_parents)
             else:  # key doesn't match
                 raise ValueError('index found no record with key {}'.format(key))
-
-    return Node

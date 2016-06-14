@@ -1,8 +1,8 @@
 import unittest
 import os
-from buffer_manager import Block
+from buffer_manager import Block, BufferManager
 from index_manager import _convert_to_tuple, _convert_to_tuple_list, _encode_sequence, _decode_sequence, iter_chunk
-from index_manager import node_factory
+from index_manager import node_factory, IndexManager
 
 
 class TestHelperFunctions(unittest.TestCase):
@@ -29,7 +29,7 @@ class TestHelperFunctions(unittest.TestCase):
 
 class TestBPlusNode(unittest.TestCase):
     def test_bytes(self):
-        Node = node_factory('<2i5s')
+        Node = node_factory('<ii5s')
         node = Node(True, [(42, 666, 'spam'), (233, 987, 'foo')], [518, 2, 42])
         octets = bytes(node)
         node2 = Node.frombytes(octets.ljust(4096, b'\0'))
@@ -130,6 +130,129 @@ class TestBPlusNodeWithFile(unittest.TestCase):
         self.assertEqual(new_node.is_leaf, True)
         self.assertEqual(new_node.keys, [(3,), (4,)])
         self.assertEqual(new_node.children, [3, 4, 42])
+
+
+class TestIndexManager(unittest.TestCase):
+    def setUp(self):
+        try:
+            os.remove('spam')
+        except FileNotFoundError:
+            pass
+
+    def tearDown(self):
+        try:
+            os.remove('spam')
+        except FileNotFoundError:
+            pass
+
+    def test_init(self):
+        manager = IndexManager('spam', '<id')
+        self.assertEqual(manager.root, 0)
+        self.assertEqual(manager.first_deleted_block, 0)
+        self.assertEqual(manager.total_blocks, 1)
+
+    def test_initial_insert(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+
+        self.assertEqual(manager.root, 1)
+        self.assertEqual(manager.first_deleted_block, 0)
+        self.assertEqual(manager.total_blocks, 2)
+        block = BufferManager().get_file_block('spam', 1)
+        Node = manager.Node
+        node = Node.frombytes(block.read())
+        self.assertEqual(node.is_leaf, True)
+        self.assertEqual(node.keys, [(42, 7.6)])
+        self.assertEqual(node.children, [518, 0])
+
+    def test_later_insert(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+        manager.insert([233, 66.6], 7)
+
+        self.assertEqual(manager.root, 1)
+        self.assertEqual(manager.first_deleted_block, 0)
+        self.assertEqual(manager.total_blocks, 2)
+        block = BufferManager().get_file_block('spam', 1)
+        Node = manager.Node
+        node = Node.frombytes(block.read())
+        self.assertEqual(node.is_leaf, True)
+        self.assertEqual(node.keys, [(42, 7.6), (233, 66.6)])
+        self.assertEqual(node.children, [518, 7, 0])
+
+    def test_find(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+        manager.insert([233, 66.6], 7)
+        result = manager.find([42, 7.6])
+        self.assertEqual(result, 518)
+
+    def test_find_from_empty(self):
+        manager = IndexManager('spam', '<id')
+        result = manager.find([23, 3])
+        self.assertEqual(result, None)
+
+    def test_find_not_exists(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+        manager.insert([233, 66.6], 7)
+        result = manager.find([233, 7.6])
+        self.assertEqual(result, None)
+
+    def test_delete_from_empty(self):
+        manager = IndexManager('spam', '<id')
+        with self.assertRaises(ValueError):
+            manager.delete([2, 3.3])
+
+    def test_successful_delete(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+        manager.insert([233, 66.6], 7)
+        manager.delete([42, 7.6])
+
+        self.assertEqual(manager.root, 1)
+        self.assertEqual(manager.first_deleted_block, 0)
+        self.assertEqual(manager.total_blocks, 2)
+        block = BufferManager().get_file_block('spam', 1)
+        Node = manager.Node
+        node = Node.frombytes(block.read())
+        self.assertEqual(node.is_leaf, True)
+        self.assertEqual(node.keys, [(233, 66.6)])
+        self.assertEqual(node.children, [7, 0])
+
+    def test_unsuccessful_delete(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+        manager.insert([233, 66.6], 7)
+        with self.assertRaises(ValueError):
+            manager.delete([2, 3.3])
+
+    def test_shrinking_delete(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+        manager.delete([42, 7.6])
+
+        self.assertEqual(manager.root, 0)
+        self.assertEqual(manager.first_deleted_block, 1)
+        self.assertEqual(manager.total_blocks, 2)
+
+    def test_reallocating_insert(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+        manager.delete([42, 7.6])
+
+        manager.insert([233, 66.6], 7)
+
+        self.assertEqual(manager.root, 1)
+        self.assertEqual(manager.first_deleted_block, 0)
+        self.assertEqual(manager.total_blocks, 2)
+
+        block = BufferManager().get_file_block('spam', 1)
+        Node = manager.Node
+        node = Node.frombytes(block.read())
+        self.assertEqual(node.is_leaf, True)
+        self.assertEqual(node.keys, [(233, 66.6)])
+        self.assertEqual(node.children, [7, 0])
 
 
 if __name__ == '__main__':

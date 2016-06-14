@@ -22,8 +22,8 @@ class TestLoad(unittest.TestCase):
         self.assertTrue(meta1 is meta2)
 
     def test_import_load(self):
-        import tests.import_a, tests.import_b
-        self.assertTrue(tests.import_a.meta is tests.import_b.meta)
+        import tests.catalog_import_a, tests.catalog_import_b
+        self.assertTrue(tests.catalog_import_a.meta is tests.catalog_import_b.meta)
 
 
 def prepare_metadata():
