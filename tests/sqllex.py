@@ -27,14 +27,8 @@ tokens = reserved + \
 
 t_ignore = ' \t\x0c'
 
-
-def t_error(t):
-    print('Oooooooooooop Error!')
-    t.lexer.skip(1)
-
 #Symbols
 t_STAR = '\*'
-
 
 # Delimeters
 t_COMMA = ','
@@ -47,15 +41,21 @@ t_LT = r'<'
 t_GT = r'>'
 t_LE = r'<='
 t_GE = r'>='
-t_EQ = r'=='
+t_EQ = r'='
 t_NE = r'!='
 
 
 # Integer Literal
-t_ICONST = r'\d+([uU]|[lL]|[uU][lL]|[lL][uU])?'
+def t_ICONST(t):
+    r'\d+([uU]|[lL]|[uU][lL]|[lL][uU])?'
+    t.value = int(t.value)
+    return t
 
 # Floating literal
-t_FCONST = r'((\d+)(\.\d+)(e(\+|-)?(\d+))? | (\d+)e(\+|-)?(\d+))([lL]|[fF])?'
+def t_FCONST(t):
+    r'((\d+)(\.\d+)(e(\+|-)?(\d+))? | (\d+)e(\+|-)?(\d+))([lL]|[fF])?'
+    t.value = float(t.value)
+    return t
 
 # String literal
 t_SCONST = r'\'([^\\\n]|(\\.))*?\''
@@ -70,6 +70,10 @@ def t_ID(t):
     r'[A-Za-z_][\w_]*'
     t.type = reserved_map.get(t.value.lower(), "ID")
     return t
+
+def t_error(t):
+    print('Syntax Error at {}'.format(t.value))
+    t.lexer.skip(1)
 
 
 lexer = lex.lex()
