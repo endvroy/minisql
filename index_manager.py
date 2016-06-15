@@ -351,20 +351,22 @@ class IndexManager:
                 self._handle_underflow(parent, parent_block, path_to_parents)
 
     def delete(self, key):
-        if self.root == 0:
-            raise ValueError('Cannot delete from empty index')
-        else:
-            key = _convert_to_tuple(key)
-            node, node_block, path_to_parents = self._find_first_node(key)
-
-            key_position = bisect.bisect_left(node.keys, key)
-            if key_position < len(node.keys) and node.keys[key_position] == key:  # key match
-                del node.keys[key_position]
-                del node.children[key_position]
-                if len(node.keys) >= ceil(node.n / 2):
-                    node_block.write(bytes(node))
-                    return
-                else:  # underflow
-                    self._handle_underflow(node, node_block, path_to_parents)
-            else:  # key doesn't match
-                raise ValueError('index found no record with key {}'.format(key))
+        deleted_num = 0
+        while True:
+            if self.root == 0:
+                return deleted_num
+            else:
+                key = _convert_to_tuple(key)
+                node, node_block, path_to_parents = self._find_first_node(key)
+                key_position = bisect.bisect_left(node.keys, key)
+                if key_position < len(node.keys) and node.keys[key_position] == key:  # key match
+                    del node.keys[key_position]
+                    del node.children[key_position]
+                    if len(node.keys) >= ceil(node.n / 2):
+                        node_block.write(bytes(node))
+                        return
+                    else:  # underflow
+                        self._handle_underflow(node, node_block, path_to_parents)
+                    deleted_num += 1
+                else:  # key doesn't match
+                    return deleted_num

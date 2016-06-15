@@ -209,8 +209,8 @@ class TestIndexManager(unittest.TestCase):
 
     def test_delete_from_empty(self):
         manager = IndexManager('spam', '<id')
-        with self.assertRaises(ValueError):
-            manager.delete([2, 3.3])
+        deleted_num = manager.delete([2, 3.3])
+        self.assertEqual(deleted_num, 0)
 
     def test_successful_delete(self):
         manager = IndexManager('spam', '<id')
@@ -228,7 +228,6 @@ class TestIndexManager(unittest.TestCase):
         self.assertEqual(node.keys, [(233, 66.6)])
         self.assertEqual(node.children, [7, 0])
 
-    @unittest.skip('not implemented yet')
     def test_multiple_delete(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
@@ -250,8 +249,8 @@ class TestIndexManager(unittest.TestCase):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
         manager.insert([233, 66.6], 7)
-        with self.assertRaises(ValueError):
-            manager.delete([2, 3.3])
+        deleted_num = manager.delete([2, 3.3])
+        self.assertEqual(deleted_num, 0)
 
     def test_shrinking_delete(self):
         manager = IndexManager('spam', '<id')
