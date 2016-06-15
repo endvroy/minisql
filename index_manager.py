@@ -170,12 +170,6 @@ class IndexManager:
                                                    self.first_deleted_block,
                                                    self.root).ljust(4096, b'\0'))
 
-    def _find_free_block_offset(self):
-        if self.first_deleted_block > 0:
-            return self.first_deleted_block
-        else:
-            return self.total_blocks
-
     def _get_free_block(self):
         if self.first_deleted_block > 0:
             block_offset = self.first_deleted_block

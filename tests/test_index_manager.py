@@ -255,5 +255,39 @@ class TestIndexManager(unittest.TestCase):
         self.assertEqual(node.children, [7, 0])
 
 
+class TestPersistence(unittest.TestCase):
+    def setUp(self):
+        try:
+            os.remove('spam')
+        except FileNotFoundError:
+            pass
+
+    def tearDown(self):
+        try:
+            os.remove('spam')
+        except FileNotFoundError:
+            pass
+
+    def test_persistence(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+        manager.insert([233, 66.6], 7)
+        manager.delete([42, 7.6])
+        manager.dump_header()
+        manager.manager.flush_all()
+        del manager
+
+        manager = IndexManager('spam', '<id')
+        self.assertEqual(manager.root, 1)
+        self.assertEqual(manager.first_deleted_block, 0)
+        self.assertEqual(manager.total_blocks, 2)
+        block = BufferManager().get_file_block('spam', 1)
+        Node = manager.Node
+        node = Node.frombytes(block.read())
+        self.assertEqual(node.is_leaf, True)
+        self.assertEqual(node.keys, [(233, 66.6)])
+        self.assertEqual(node.children, [7, 0])
+
+
 if __name__ == '__main__':
     unittest.main()
