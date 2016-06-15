@@ -32,7 +32,7 @@ class TestBPlusNode(unittest.TestCase):
         Node = node_factory('<ii5s')
         node = Node(True, [(42, 666, 'spam'), (233, 987, 'foo')], [518, 2, 42])
         octets = bytes(node)
-        node2 = Node.frombytes(octets.ljust(4096, b'\0'))
+        node2 = Node.frombytes(octets.ljust(BufferManager.block_size, b'\0'))
         self.assertEqual(node2.is_leaf, True)
         self.assertEqual(node2.keys, [(42, 666, 'spam'), (233, 987, 'foo')])
         self.assertEqual(node2.children, [518, 2, 42])
@@ -107,7 +107,7 @@ class TestBPlusNode(unittest.TestCase):
 class TestBPlusNodeWithFile(unittest.TestCase):
     def setUp(self):
         with open('bar', 'wb') as file:
-            file.write(b'\0' * 4096 * 100)
+            file.write(b'\0' * BufferManager.block_size * 100)
 
     def tearDown(self):
         os.remove('bar')
@@ -116,8 +116,8 @@ class TestBPlusNodeWithFile(unittest.TestCase):
         Node = node_factory('<i')
         node = Node(True, [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 42])
         Node.n = 4
-        block = Block(4096, 'bar', 6)
-        new_block = Block(4096, 'bar', 50)
+        block = Block(BufferManager.block_size, 'bar', 6)
+        new_block = Block(BufferManager.block_size, 'bar', 50)
         key, value = node.split_and_write(block, new_block)
 
         self.assertEqual(key, (3,))
@@ -216,8 +216,9 @@ class TestIndexManager(unittest.TestCase):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
         manager.insert([233, 66.6], 7)
-        manager.delete([42, 7.6])
+        deleted_num = manager.delete([42, 7.6])
 
+        self.assertEqual(deleted_num, 1)
         self.assertEqual(manager.root, 1)
         self.assertEqual(manager.first_deleted_block, 0)
         self.assertEqual(manager.total_blocks, 2)
@@ -233,8 +234,9 @@ class TestIndexManager(unittest.TestCase):
         manager.insert([42, 7.6], 518)
         manager.insert([42, 7.6], 212)
         manager.insert([233, 66.6], 7)
-        manager.delete([42, 7.6])
+        deleted_num = manager.delete([42, 7.6])
 
+        self.assertEqual(deleted_num, 2)
         self.assertEqual(manager.root, 1)
         self.assertEqual(manager.first_deleted_block, 0)
         self.assertEqual(manager.total_blocks, 2)
@@ -255,8 +257,10 @@ class TestIndexManager(unittest.TestCase):
     def test_shrinking_delete(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
-        manager.delete([42, 7.6])
+        manager.insert([42, 7.6], 212)
+        deleted_num = manager.delete([42, 7.6])
 
+        self.assertEqual(deleted_num, 2)
         self.assertEqual(manager.root, 0)
         self.assertEqual(manager.first_deleted_block, 1)
         self.assertEqual(manager.total_blocks, 2)
@@ -299,7 +303,7 @@ class TestPersistence(unittest.TestCase):
         manager.insert([233, 66.6], 7)
         manager.delete([42, 7.6])
         manager.dump_header()
-        manager.manager.flush_all()
+        manager._manager.flush_all()
         del manager
 
         manager = IndexManager('spam', '<id')
