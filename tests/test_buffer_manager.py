@@ -83,14 +83,15 @@ class TestBufferManager(unittest.TestCase):
     def setUp(self):
         with open('foo', 'wb') as file:
             file.write(b'Hello World')
-
-    def tearDown(self):
-        os.remove('foo')
-
-    def test_buffer_manager(self):
         BufferManager.block_size = 5
         BufferManager.total_blocks = 2
 
+    def tearDown(self):
+        os.remove('foo')
+        BufferManager.block_size = 4096
+        BufferManager.total_blocks = 1024
+
+    def test_buffer_manager(self):
         manager = BufferManager()
         a = manager.get_file_block('foo', 0)
         a.pin()
