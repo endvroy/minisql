@@ -190,7 +190,7 @@ class IndexManager:
             block.write(bytes(node))
             self.first_deleted_block = block.block_offset
 
-    def _find_position(self, key):
+    def _find_first_node(self, key):
         key = _convert_to_tuple(key)
         node_block_offset = self.root
         path_to_parents = []
@@ -208,12 +208,23 @@ class IndexManager:
     def find(self, key):
         key = _convert_to_tuple(key)
         if self.root == 0:
-            return None
+            return []
         else:
-            node, node_block, path_to_parents = self._find_position(key)
+            results = []
+            node, node_block, path_to_parents = self._find_first_node(key)
             key_position = bisect.bisect_left(node.keys, key)
-            if key_position < len(node.keys) and node.keys[key_position] == key:
-                return node.children[key_position]
+            while True:
+                if key_position < len(node.keys):
+                    if node.keys[key_position] == key:
+                        results.append(node.children[key_position])
+                        key_position += 1
+                    else:
+                        return results
+                else:  # jump
+                    node_block = self.manager.get_file_block(self.index_file_path, node.children[-1])
+                    with pin(node_block):
+                        node = self.Node.frombytes(node_block.read())
+                        key_position = 0
 
     def _insert_into_parents(self, key, value, path_to_parents):
         key = _convert_to_tuple(key)
@@ -252,7 +263,7 @@ class IndexManager:
                                  children=[value, 0])
                 block.write(bytes(node))
         else:
-            node, node_block, path_to_parents = self._find_position(key)
+            node, node_block, path_to_parents = self._find_first_node(key)
             node.insert(key, value)
             if len(node.keys) <= node.n:
                 node_block.write(bytes(node))
@@ -344,7 +355,7 @@ class IndexManager:
             raise ValueError('Cannot delete from empty index')
         else:
             key = _convert_to_tuple(key)
-            node, node_block, path_to_parents = self._find_position(key)
+            node, node_block, path_to_parents = self._find_first_node(key)
 
             key_position = bisect.bisect_left(node.keys, key)
             if key_position < len(node.keys) and node.keys[key_position] == key:  # key match

@@ -185,19 +185,27 @@ class TestIndexManager(unittest.TestCase):
         manager.insert([42, 7.6], 518)
         manager.insert([233, 66.6], 7)
         result = manager.find([42, 7.6])
-        self.assertEqual(result, 518)
+        self.assertEqual(result, [518])
+
+    def test_find_all(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+        manager.insert([42, 7.6], 212)
+        manager.insert([233, 66.6], 7)
+        results = manager.find([42, 7.6])
+        self.assertEqual(sorted(results), [212, 518])
 
     def test_find_from_empty(self):
         manager = IndexManager('spam', '<id')
         result = manager.find([23, 3])
-        self.assertEqual(result, None)
+        self.assertEqual(result, [])
 
     def test_find_not_exists(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
         manager.insert([233, 66.6], 7)
         result = manager.find([233, 7.6])
-        self.assertEqual(result, None)
+        self.assertEqual(result, [])
 
     def test_delete_from_empty(self):
         manager = IndexManager('spam', '<id')
@@ -207,6 +215,24 @@ class TestIndexManager(unittest.TestCase):
     def test_successful_delete(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
+        manager.insert([233, 66.6], 7)
+        manager.delete([42, 7.6])
+
+        self.assertEqual(manager.root, 1)
+        self.assertEqual(manager.first_deleted_block, 0)
+        self.assertEqual(manager.total_blocks, 2)
+        block = BufferManager().get_file_block('spam', 1)
+        Node = manager.Node
+        node = Node.frombytes(block.read())
+        self.assertEqual(node.is_leaf, True)
+        self.assertEqual(node.keys, [(233, 66.6)])
+        self.assertEqual(node.children, [7, 0])
+
+    @unittest.skip('not implemented yet')
+    def test_multiple_delete(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+        manager.insert([42, 7.6], 212)
         manager.insert([233, 66.6], 7)
         manager.delete([42, 7.6])
 
