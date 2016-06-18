@@ -383,7 +383,7 @@ class IndexManager:
         else:  # fuse with right sibling
             node.fuse_with(right_sibling)
             with pin(block):
-                block.write(bytes(right_sibling))
+                block.write(bytes(node))
             self._delete_node(right_sibling, right_sibling_block)
             del parent.keys[my_position]
             del parent.children[my_position + 1]
