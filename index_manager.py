@@ -223,27 +223,18 @@ class IndexManager:
                     node_block_offset = node.children[child_index]
 
     def find(self, key):
-        """find all the values correspond to key, return a list of these values
-        if no such value exist, return an empty list"""
+        """find the value corresponding to key and return it
+        if no such value exists, return None"""
         key = _convert_to_tuple(key)
         if self.root == 0:
-            return []
+            return None
         else:
-            results = []
             node, node_block, path_to_parents = self._find_first_leaf(key)
             key_position = bisect.bisect_left(node.keys, key)
-            while True:
-                if key_position < len(node.keys):
-                    if node.keys[key_position] == key:
-                        results.append(node.children[key_position])
-                        key_position += 1
-                    else:
-                        return results
-                else:  # jump
-                    node_block = self._manager.get_file_block(self.index_file_path, node.children[-1])
-                    with pin(node_block):
-                        node = self.Node.frombytes(node_block.read())
-                        key_position = 0
+            if key_position < len(node.keys) and node.keys[key_position] == key:
+                return node.children[key_position]
+            else:
+                return None
 
     def _handle_overflow(self, node, block, path_to_parents):
         if not path_to_parents:  # the root overflowed
@@ -283,6 +274,9 @@ class IndexManager:
                 block.write(bytes(node))
         else:
             node, node_block, path_to_parents = self._find_first_leaf(key)
+            key_position = bisect.bisect_left(node.keys, key)
+            if key_position < len(node.keys) and node.keys[key_position] == key:
+                raise ValueError('duplicate key {}'.format(key))
             node.insert(key, value)
             if len(node.keys) <= node.n:
                 node_block.write(bytes(node))
@@ -393,25 +387,21 @@ class IndexManager:
                 self._handle_underflow(parent, parent_block, path_to_parents)
 
     def delete(self, key):
-        """delete all key-value pairs whose key equals the parameter
-        return the number of deleted pairs
-        if the number is 0, the index file has no such key"""
+        """delete the key-value pair with key equal the parameter
+        if the index file has no such key, raise ValueError"""
         key = _convert_to_tuple(key)
-        deleted_num = 0
-        while True:
-            if self.root == 0:
-                return deleted_num
-            else:
-                node, node_block, path_to_parents = self._find_first_leaf(key)
-                key_position = bisect.bisect_left(node.keys, key)
-                if key_position < len(node.keys) and node.keys[key_position] == key:  # key match
-                    del node.keys[key_position]
-                    del node.children[key_position]
-                    if len(node.keys) >= ceil(node.n / 2):
-                        node_block.write(bytes(node))
-                        return
-                    else:  # underflow
-                        self._handle_underflow(node, node_block, path_to_parents)
-                    deleted_num += 1
-                else:  # key doesn't match
-                    return deleted_num
+        if self.root == 0:
+            raise ValueError('can\'t delete from empty index')
+        else:
+            node, node_block, path_to_parents = self._find_first_leaf(key)
+            key_position = bisect.bisect_left(node.keys, key)
+            if key_position < len(node.keys) and node.keys[key_position] == key:  # key match
+                del node.keys[key_position]
+                del node.children[key_position]
+                if len(node.keys) >= ceil(node.n / 2):
+                    node_block.write(bytes(node))
+                    return
+                else:  # underflow
+                    self._handle_underflow(node, node_block, path_to_parents)
+            else:  # key doesn't match
+                raise ValueError('index has no such key {}'.format(key))

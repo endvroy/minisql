@@ -180,13 +180,20 @@ class TestIndexManager(unittest.TestCase):
         self.assertEqual(node.keys, [(42, 7.6), (233, 66.6)])
         self.assertEqual(node.children, [518, 7, 0])
 
+    def test_insert_duplicate(self):
+        manager = IndexManager('spam', '<id')
+        manager.insert([42, 7.6], 518)
+        with self.assertRaises(ValueError):
+            manager.insert([42, 7.6], 233)
+
     def test_find(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
         manager.insert([233, 66.6], 7)
         result = manager.find([42, 7.6])
-        self.assertEqual(result, [518])
+        self.assertEqual(result, 518)
 
+    @unittest.skip(' non-unique keys is no longer supported')
     def test_find_all(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
@@ -198,27 +205,26 @@ class TestIndexManager(unittest.TestCase):
     def test_find_from_empty(self):
         manager = IndexManager('spam', '<id')
         result = manager.find([23, 3])
-        self.assertEqual(result, [])
+        self.assertEqual(result, None)
 
     def test_find_not_exists(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
         manager.insert([233, 66.6], 7)
         result = manager.find([233, 7.6])
-        self.assertEqual(result, [])
+        self.assertEqual(result, None)
 
     def test_delete_from_empty(self):
         manager = IndexManager('spam', '<id')
-        deleted_num = manager.delete([2, 3.3])
-        self.assertEqual(deleted_num, 0)
+        with self.assertRaises(ValueError):
+            manager.delete([2, 3.3])
 
     def test_successful_delete(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
         manager.insert([233, 66.6], 7)
-        deleted_num = manager.delete([42, 7.6])
+        manager.delete([42, 7.6])
 
-        self.assertEqual(deleted_num, 1)
         self.assertEqual(manager.root, 1)
         self.assertEqual(manager.first_deleted_block, 0)
         self.assertEqual(manager.total_blocks, 2)
@@ -229,7 +235,7 @@ class TestIndexManager(unittest.TestCase):
         self.assertEqual(node.keys, [(233, 66.6)])
         self.assertEqual(node.children, [7, 0])
 
-    @unittest.skip('no longer supported')
+    @unittest.skip(' non-unique keys is no longer supported')
     def test_multiple_delete(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
@@ -252,17 +258,16 @@ class TestIndexManager(unittest.TestCase):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
         manager.insert([233, 66.6], 7)
-        deleted_num = manager.delete([2, 3.3])
-        self.assertEqual(deleted_num, 0)
+        with self.assertRaises(ValueError):
+            manager.delete([2, 3.3])
 
     def test_shrinking_delete(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
         manager.insert([233, 66.6], 7)
         manager.delete([233, 66.6])
-        deleted_num = manager.delete([42, 7.6])
+        manager.delete([42, 7.6])
 
-        self.assertEqual(deleted_num, 1)
         self.assertEqual(manager.root, 0)
         self.assertEqual(manager.first_deleted_block, 1)
         self.assertEqual(manager.total_blocks, 2)
@@ -459,9 +464,8 @@ class TestAdjustingDeletion(unittest.TestCase):
         self.manager.insert(7, 87)
         self.manager.insert(15, 45)
         self.manager.insert(11, 43)
-        deleted_num = self.manager.delete(24)
+        self.manager.delete(24)
 
-        self.assertEqual(deleted_num, 1)
         self.assertEqual(self.manager.root, 3)
         Node = self.manager.Node
 
@@ -487,9 +491,8 @@ class TestAdjustingDeletion(unittest.TestCase):
         self.manager.insert(15, 45)
         self.manager.insert(11, 43)
         self.manager.delete(24)
-        deleted_num = self.manager.delete(11)
+        self.manager.delete(11)
 
-        self.assertEqual(deleted_num, 1)
         self.assertEqual(self.manager.root, 1)
         Node = self.manager.Node
 
