@@ -218,9 +218,9 @@ class IndexManager:
                 if node.is_leaf:
                     return node, node_block, path_to_parents
                 else:  # continue searching
+                    path_to_parents.append(node_block_offset)
                     child_index = bisect.bisect_right(node.keys, key)
                     node_block_offset = node.children[child_index]
-                    path_to_parents.append(node_block_offset)
 
     def find(self, key):
         """find all the values correspond to key, return a list of these values
@@ -245,32 +245,30 @@ class IndexManager:
                         node = self.Node.frombytes(node_block.read())
                         key_position = 0
 
-    def _insert_into_parents(self, key, value, path_to_parents):
-        """insert key-value pairs into the parents of a node to handle split"""
-        key = _convert_to_tuple(key)
-        while True:  # recursively insert into parent
-            node_block_offset = path_to_parents.pop()
-            node_block = self._manager.get_file_block(self.index_file_path,
-                                                      node_block_offset)
-            with pin(node_block):
-                node = self.Node.frombytes(node_block)
-                node.insert(key, value)
-                if len(node.keys) <= node.n:
-                    node_block.write(bytes(node))
-                    break
-                else:  # split
-                    new_block = self._get_free_block()
-                    key, value = node.split_and_write(node_block, new_block)
-
-                    if not path_to_parents:  # the root split; need a new root
-                        new_root_block = self._get_free_block()
-                        with pin(new_root_block):
-                            new_root_node = self.Node(False,
-                                                      keys=[key],
-                                                      children=[node_block_offset, new_block.block_offset])
-                            new_root_block.write(bytes(new_root_node))
-                        self.root = new_root_block.block_offset
-                        break
+    def _handle_overflow(self, node, block, path_to_parents):
+        if not path_to_parents:  # the root overflowed
+            new_block = self._get_free_block()
+            key, value = node.split_and_write(block, new_block)
+            new_root_block = self._get_free_block()
+            with pin(new_root_block):
+                new_root_node = self.Node(False,
+                                          [key],
+                                          [block.block_offset, new_block.block_offset])
+                new_root_block.write(bytes(new_root_node))
+            self.root = new_root_block.block_offset
+            return
+        else:
+            parent_offset = path_to_parents.pop()
+            new_block = self._get_free_block()
+            key, value = node.split_and_write(block, new_block)
+            parent_block = self._manager.get_file_block(self.index_file_path, parent_offset)
+            parent_node = self.Node.frombytes(parent_block)
+            parent_node.insert(key, value)
+            if len(parent_node.keys) <= self.Node.n:
+                with pin(parent_block):
+                    parent_block.write(bytes(parent_node))
+            else:
+                self._handle_overflow(parent_node, parent_block, path_to_parents)
 
     def insert(self, key, value):
         """insert a key-value pair into the index file"""
@@ -290,9 +288,31 @@ class IndexManager:
                 node_block.write(bytes(node))
                 return
             else:  # split
-                new_block = self._get_free_block()
-                key, value = node.split_and_write(node_block, new_block)
-                self._insert_into_parents(key, value, path_to_parents)
+                self._handle_overflow(node, node_block, path_to_parents)
+
+    def _transfer_left_to_right(self, left, right, parent, divide_point):
+        if left.is_leaf and right.is_leaf:
+            right.keys.insert(0, left.keys.pop())
+            right.children.insert(0, left.children.pop(-2))
+            parent.keys[divide_point] = right.keys[0]
+        elif not left.is_leaf and not right.is_leaf:
+            right.keys.insert(0, left.keys.pop())
+            right.children.insert(0, left.children.pop())
+            parent.keys[divide_point] = right.keys[0]
+        else:
+            raise ValueError('cannot transfer within leaf nodes and internal nodes')
+
+    def _transfer_right_to_left(self, left, right, parent, divide_point):
+        if left.is_leaf and right.is_leaf:
+            left.keys.append(right.keys.pop(0))
+            left.children.insert(-1, right.children.pop(0))
+            parent.keys[divide_point] = right.keys[0]
+        elif not left.is_leaf and not right.is_leaf:
+            left.keys.append(right.keys.pop(0))
+            left.children.append(right.children.pop(0))
+            parent.keys[divide_point] = right.keys[0]
+        else:
+            raise ValueError('cannot transfer within leaf nodes and internal nodes')
 
     def _handle_underflow(self, node, block, path_to_parents):
         """handle underflow after deletion
@@ -322,11 +342,9 @@ class IndexManager:
             left_sibling_block = self._manager.get_file_block(self.index_file_path,
                                                               left_sibling_offset)
             with pin(left_sibling_block):
-                left_sibling = self.Node.frombytes(left_sibling_block)
+                left_sibling = self.Node.frombytes(left_sibling_block.read())
             if len(left_sibling.keys) > ceil(node.n / 2):  # a transfer is possible
-                node.keys.insert(parent.keys[my_position - 1], 0)
-                node.children.insert(left_sibling.children.pop())
-                parent.keys[my_position - 1] = left_sibling.keys.pop()
+                self._transfer_left_to_right(left_sibling, node, parent, my_position - 1)
                 with pin(block), pin(left_sibling_block), pin(parent_block):
                     block.write(bytes(node))
                     left_sibling_block.write(bytes(left_sibling))
@@ -342,9 +360,7 @@ class IndexManager:
             with pin(right_sibling_block):
                 right_sibling = self.Node.frombytes(right_sibling_block.read())
             if len(right_sibling.keys) > ceil(node.n / 2):  # a transfer is possible
-                node.keys.append(parent.keys[my_position])
-                node.children.append(right_sibling.children.pop(0))
-                parent.keys[my_position + 1] = right_sibling.keys.pop(0)
+                self._transfer_right_to_left(node, right_sibling, parent, my_position)
                 with pin(block), pin(right_sibling_block), pin(parent_block):
                     block.write(bytes(node))
                     right_sibling_block.write(bytes(right_sibling))
@@ -367,7 +383,7 @@ class IndexManager:
         else:  # fuse with right sibling
             node.fuse_with(right_sibling)
             with pin(block):
-                block.write(bytes())
+                block.write(bytes(right_sibling))
             self._delete_node(right_sibling, right_sibling_block)
             del parent.keys[my_position]
             del parent.children[my_position + 1]
@@ -380,12 +396,12 @@ class IndexManager:
         """delete all key-value pairs whose key equals the parameter
         return the number of deleted pairs
         if the number is 0, the index file has no such key"""
+        key = _convert_to_tuple(key)
         deleted_num = 0
         while True:
             if self.root == 0:
                 return deleted_num
             else:
-                key = _convert_to_tuple(key)
                 node, node_block, path_to_parents = self._find_first_leaf(key)
                 key_position = bisect.bisect_left(node.keys, key)
                 if key_position < len(node.keys) and node.keys[key_position] == key:  # key match

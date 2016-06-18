@@ -229,6 +229,7 @@ class TestIndexManager(unittest.TestCase):
         self.assertEqual(node.keys, [(233, 66.6)])
         self.assertEqual(node.children, [7, 0])
 
+    @unittest.skip('no longer supported')
     def test_multiple_delete(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
@@ -257,10 +258,11 @@ class TestIndexManager(unittest.TestCase):
     def test_shrinking_delete(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
-        manager.insert([42, 7.6], 212)
+        manager.insert([233, 66.6], 7)
+        manager.delete([233, 66.6])
         deleted_num = manager.delete([42, 7.6])
 
-        self.assertEqual(deleted_num, 2)
+        self.assertEqual(deleted_num, 1)
         self.assertEqual(manager.root, 0)
         self.assertEqual(manager.first_deleted_block, 1)
         self.assertEqual(manager.total_blocks, 2)
@@ -316,6 +318,186 @@ class TestPersistence(unittest.TestCase):
         self.assertEqual(node.is_leaf, True)
         self.assertEqual(node.keys, [(233, 66.6)])
         self.assertEqual(node.children, [7, 0])
+
+
+class TestTransfer(unittest.TestCase):
+    def setUp(self):
+        try:
+            os.remove('spam')
+        except FileNotFoundError:
+            pass
+        self.manager = IndexManager('spam', '<i')
+
+    def tearDown(self):
+        try:
+            os.remove('spam')
+        except FileNotFoundError:
+            pass
+        del self.manager
+
+    def test_tranfer_left_to_right_leaf(self):
+        Node = self.manager.Node
+        parent = Node(False,
+                      [2, 15, 35],
+                      [54, 21, 518, 42])
+
+        left = Node(True,
+                    [2, 7, 11],
+                    [32, 87, 43, 518])
+
+        right = Node(True,
+                     [15, 24, 31],
+                     [45, 67, 89, 42])
+
+        self.manager._transfer_left_to_right(left, right, parent, 1)
+
+        self.assertEqual(parent.keys, _convert_to_tuple_list([2, 11, 35]))
+        self.assertEqual(parent.children, [54, 21, 518, 42])
+
+        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7]))
+        self.assertEqual(left.children, [32, 87, 518])
+
+        self.assertEqual(right.keys, _convert_to_tuple_list([11, 15, 24, 31]))
+        self.assertEqual(right.children, [43, 45, 67, 89, 42])
+
+    def test_tranfer_left_to_right_internal(self):
+        Node = self.manager.Node
+        parent = Node(False,
+                      [2, 15, 35],
+                      [54, 21, 518, 42])
+
+        left = Node(False,
+                    [2, 7, 11],
+                    [32, 87, 43, 518])
+
+        right = Node(False,
+                     [15, 24, 31],
+                     [45, 67, 89, 42])
+
+        self.manager._transfer_left_to_right(left, right, parent, 1)
+
+        self.assertEqual(parent.keys, _convert_to_tuple_list([2, 11, 35]))
+        self.assertEqual(parent.children, [54, 21, 518, 42])
+
+        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7]))
+        self.assertEqual(left.children, [32, 87, 43])
+
+        self.assertEqual(right.keys, _convert_to_tuple_list([11, 15, 24, 31]))
+        self.assertEqual(right.children, [518, 45, 67, 89, 42])
+
+    def test_tranfer_right_to_left_leaf(self):
+        Node = self.manager.Node
+        parent = Node(False,
+                      [2, 15, 35],
+                      [54, 21, 518, 42])
+
+        left = Node(True,
+                    [2, 7, 11],
+                    [32, 87, 43, 518])
+
+        right = Node(True,
+                     [15, 24, 31],
+                     [45, 67, 89, 42])
+
+        self.manager._transfer_right_to_left(left, right, parent, 1)
+
+        self.assertEqual(parent.keys, _convert_to_tuple_list([2, 24, 35]))
+        self.assertEqual(parent.children, [54, 21, 518, 42])
+
+        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7, 11, 15]))
+        self.assertEqual(left.children, [32, 87, 43, 45, 518])
+
+        self.assertEqual(right.keys, _convert_to_tuple_list([24, 31]))
+        self.assertEqual(right.children, [67, 89, 42])
+
+    def test_tranfer_right_to_left_internal(self):
+        Node = self.manager.Node
+        parent = Node(False,
+                      [2, 15, 35],
+                      [54, 21, 518, 42])
+
+        left = Node(False,
+                    [2, 7, 11],
+                    [32, 87, 43, 518])
+
+        right = Node(False,
+                     [15, 24, 31],
+                     [45, 67, 89, 42])
+
+        self.manager._transfer_right_to_left(left, right, parent, 1)
+
+        self.assertEqual(parent.keys, _convert_to_tuple_list([2, 24, 35]))
+        self.assertEqual(parent.children, [54, 21, 518, 42])
+
+        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7, 11, 15]))
+        self.assertEqual(left.children, [32, 87, 43, 518, 45])
+
+        self.assertEqual(right.keys, _convert_to_tuple_list([24, 31]))
+        self.assertEqual(right.children, [67, 89, 42])
+
+
+class TestAdjustingDeletion(unittest.TestCase):
+    def setUp(self):
+        try:
+            os.remove('spam')
+        except FileNotFoundError:
+            pass
+        self.manager = IndexManager('spam', '<i')
+        self.manager.Node.n = 4
+
+    def tearDown(self):
+        try:
+            os.remove('spam')
+        except FileNotFoundError:
+            pass
+        del self.manager
+
+    def test_delete_transfer(self):
+        self.manager.Node.n = 4
+        self.manager.insert(2, 32)
+        self.manager.insert(24, 67)
+        self.manager.insert(7, 87)
+        self.manager.insert(15, 45)
+        self.manager.insert(11, 43)
+        deleted_num = self.manager.delete(24)
+
+        self.assertEqual(deleted_num, 1)
+        self.assertEqual(self.manager.root, 3)
+        Node = self.manager.Node
+
+        root_block = BufferManager().get_file_block(self.manager.index_file_path, self.manager.root)
+        root_node = Node.frombytes(root_block.read())
+        self.assertEqual(root_node.keys, [(11,)])
+
+        left_block = BufferManager().get_file_block(self.manager.index_file_path, 1)
+        left_node = Node.frombytes(left_block.read())
+        self.assertEqual(left_node.keys, _convert_to_tuple_list([2, 7]))
+        self.assertEqual(left_node.children, [32, 87, 2])
+
+        right_block = BufferManager().get_file_block(self.manager.index_file_path, 2)
+        right_node = Node.frombytes(right_block.read())
+        self.assertEqual(right_node.keys, _convert_to_tuple_list([11, 15]))
+        self.assertEqual(right_node.children, [43, 45, 0])
+
+    def test_delete_fuse(self):
+        self.manager.Node.n = 4
+        self.manager.insert(2, 32)
+        self.manager.insert(24, 67)
+        self.manager.insert(7, 87)
+        self.manager.insert(15, 45)
+        self.manager.insert(11, 43)
+        self.manager.delete(24)
+        deleted_num = self.manager.delete(11)
+
+        self.assertEqual(deleted_num, 1)
+        self.assertEqual(self.manager.root, 1)
+        Node = self.manager.Node
+
+        root_block = BufferManager().get_file_block(self.manager.index_file_path, self.manager.root)
+        root_node = Node.frombytes(root_block.read())
+        self.assertEqual(root_node.is_leaf, True)
+        self.assertEqual(root_node.keys, _convert_to_tuple_list([2, 7, 15]))
+        self.assertEqual(root_node.children, [32, 87, 45, 0])
 
 
 if __name__ == '__main__':
