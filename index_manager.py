@@ -236,20 +236,6 @@ class IndexManager:
                     child_index = bisect.bisect_right(node.keys, key)
                     node_block_offset = node.children[child_index]
 
-    def find(self, key):
-        """find the value corresponding to key and return it
-        if no such value exists, return None"""
-        key = _convert_to_tuple(key)
-        if self.root == 0:
-            return None
-        else:
-            node, node_block, path_to_parents = self._find_first_leaf(key)
-            key_position = bisect.bisect_left(node.keys, key)
-            if key_position < len(node.keys) and node.keys[key_position] == key:
-                return node.children[key_position]
-            else:
-                return None
-
     def _handle_overflow(self, node, block, path_to_parents):
         if not path_to_parents:  # the root overflowed
             new_block = self._get_free_block()
@@ -280,29 +266,6 @@ class IndexManager:
                     parent_block.write(bytes(parent_node))
             else:
                 self._handle_overflow(parent_node, parent_block, path_to_parents)
-
-    def insert(self, key, value):
-        """insert a key-value pair into the index file"""
-        key = _convert_to_tuple(key)
-        if self.root == 0:
-            block = self._get_free_block()
-            with pin(block):
-                self.root = block.block_offset
-                node = self.Node(is_leaf=True,
-                                 keys=[key],
-                                 children=[value, 0])
-                block.write(bytes(node))
-        else:
-            node, node_block, path_to_parents = self._find_first_leaf(key)
-            key_position = bisect.bisect_left(node.keys, key)
-            if key_position < len(node.keys) and node.keys[key_position] == key:
-                raise ValueError('duplicate key {}'.format(key))
-            node.insert(key, value)
-            if len(node.keys) <= node.n:
-                node_block.write(bytes(node))
-                return
-            else:  # split
-                self._handle_overflow(node, node_block, path_to_parents)
 
     def _handle_underflow(self, node, block, path_to_parents):
         """handle underflow after deletion
@@ -377,6 +340,43 @@ class IndexManager:
                 return
             else:
                 self._handle_underflow(parent, parent_block, path_to_parents)
+
+    def find(self, key):
+        """find the value corresponding to key and return it
+        if no such value exists, return None"""
+        key = _convert_to_tuple(key)
+        if self.root == 0:
+            return None
+        else:
+            node, node_block, path_to_parents = self._find_first_leaf(key)
+            key_position = bisect.bisect_left(node.keys, key)
+            if key_position < len(node.keys) and node.keys[key_position] == key:
+                return node.children[key_position]
+            else:
+                return None
+
+    def insert(self, key, value):
+        """insert a key-value pair into the index file"""
+        key = _convert_to_tuple(key)
+        if self.root == 0:
+            block = self._get_free_block()
+            with pin(block):
+                self.root = block.block_offset
+                node = self.Node(is_leaf=True,
+                                 keys=[key],
+                                 children=[value, 0])
+                block.write(bytes(node))
+        else:
+            node, node_block, path_to_parents = self._find_first_leaf(key)
+            key_position = bisect.bisect_left(node.keys, key)
+            if key_position < len(node.keys) and node.keys[key_position] == key:
+                raise ValueError('duplicate key {}'.format(key))
+            node.insert(key, value)
+            if len(node.keys) <= node.n:
+                node_block.write(bytes(node))
+                return
+            else:  # split
+                self._handle_overflow(node, node_block, path_to_parents)
 
     def delete(self, key):
         """delete the key-value pair with key equal the parameter
