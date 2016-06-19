@@ -14,32 +14,32 @@ def create_table(table_name, *columns):
 def insert_record(table_name, attributes):
 	metadata = load_metadata()
 	index = Index()
-	RecordManger.init_table(table_name)
-	position = RecordManger.insert(table_name, metadata.table[table_name].fmt, attributes)
+	RecordManager.init_table(table_name)
+	position = RecordManager.insert(table_name, metadata.tables[table_name].fmt, attributes)
 	for index.name in metadata.tables[table_name].indexes :
-		file_path = RecordManger.file_dir + table_name + index.name + '.index' 
-		manager = IndexManger(file_path,metadata.table[table_name].fmt)
-		key_pos = list(metadata.table[table_name].columns.keys()).index(list(index.columns.keys())[0]) #test
+		file_path = RecordManager.file_dir + table_name + index.name + '.index' 
+		manager = IndexManager(file_path,metadata.tables[table_name].fmt)
+		key_pos = list(metadata.tables[table_name].columns.keys()).index(list(index.columns.keys())[0]) #test
 		key = attributes[key_pos]
 		manager.insert(key,position)
 
 
 def create_index(table_name, index_name, column_name):
-	position = -1;
+	position = -1
 	metadata = load_metadata()
 	metadata.add_index(table_name, index_name, column_name)
-	records = RecordManger.select(table_name, metadata.table[table_name].fmt, *, 0, *, {})
+	records = RecordManager.select(table_name, metadata.tables[table_name].fmt, *, 0, *, {})
 	for record in records :
-		file_path = RecordManger.file_dir + table_name + index.name + '.index' 
-		manager = IndexManger(file_path,metadata.table[table_name].fmt)
-		key_pos = list(metadata.table[table_name].columns.keys()).index(column_name)
+		file_path = RecordManager.file_dir + table_name + index.name + '.index' 
+		manager = IndexManager(file_path,metadata.tables[table_name].fmt)
+		key_pos = list(metadata.tables[table_name].columns.keys()).index(column_name)
 		key = record[key_pos]
 		manager.insert(key,position+=1)		
 		#position needs to be determined
 
 
 def select_record_all(table_name):
-	records = RecordManger.select(table_name, metadata.table[table_name].fmt, *, 0, *, {})
+	records = RecordManager.select(table_name, metadata.tables[table_name].fmt, *, 0, *, {})
 	return records
 
 
@@ -49,12 +49,12 @@ def delete_record_all(table_name):
 	records = select_record_all(table_name)
 	for record in records :
 		for index.name in metadata.tables[table_name].indexes :
-			file_path = RecordManger.file_dir + table_name + index.name + '.index' 
-			manager = IndexManger(file_path,metadata.table[table_name].fmt)
-			key_pos = list(metadata.table[table_name].columns.keys()).index(list(index.columns.keys())[0])   #index can be added on single column
+			file_path = RecordManager.file_dir + table_name + index.name + '.index' 
+			manager = IndexManager(file_path,metadata.tables[table_name].fmt)
+			key_pos = list(metadata.tables[table_name].columns.keys()).index(list(index.columns.keys())[0])   #index can be added on single column
 			key = record[key_pos]
 			manager.delete(key)		
-	RecordManager.delete(table_name, metadata.table[table_name].fmt, *, 0, *, {})
+	RecordManager.delete(table_name, metadata.tables[table_name].fmt, *, 0, *, {})
 
 
 def select_record_conditionally(table_name,conditions):  #support only equivalent search
@@ -65,13 +65,13 @@ def select_record_conditionally(table_name,conditions):  #support only equivalen
 		attribute = conditions[condition_pos][0]
 		for index.name in metadata.tables[table_name].indexes :
 			if attribute in index.columns :
-				file_path = RecordManger.file_dir + table_name + index.name + '.index'     #
-				manager = IndexManger(file_path,metadata.table[table_name].fmt)
+				file_path = RecordManager.file_dir + table_name + index.name + '.index'     #
+				manager = IndexManager(file_path,metadata.tables[table_name].fmt)
 				offset = manager.find(conditions[condition_pos][2])			
 				for record_offset in offset :
-					records += RecordManger.select(table_name, metadata.table[table_name].fmt, *, 1, record_offset, {})	
+					records += RecordManager.select(table_name, metadata.tables[table_name].fmt, *, 1, record_offset, {})	
 				return records
-	records = RecordManger.select(table_name, metadata.table[table_name].fmt, *, 0, *, conditions)
+	records = RecordManager.select(table_name, metadata.tables[table_name].fmt, *, 0, *, conditions)
 	return records
 
 
@@ -82,17 +82,17 @@ def delete_record_conditionally(table_name,conditions):
 	for record in records :
 		for index.name in metadata.tables[table_name].indexes :
 			has_index = 1
-			file_path = RecordManger.file_dir + table_name + index.name + '.index' 
-			manager = IndexManger(file_path,metadata.table[table_name].fmt)
-			key_pos = list(metadata.table[table_name].columns.keys()).index(list(index.columns.keys())[0])   #index can be added on single column
+			file_path = RecordManager.file_dir + table_name + index.name + '.index' 
+			manager = IndexManager(file_path,metadata.tables[table_name].fmt)
+			key_pos = list(metadata.tables[table_name].columns.keys()).index(list(index.columns.keys())[0])   #index can be added on single column
 			key = record[key_pos]
 			value = manager.find(key)
 			manager.delete(key)		
 		if has_index :
 			has_index = 0
-			RecordManager.delete(table_name, metadata.table[table_name].fmt, *, 1, value, *)
+			RecordManager.delete(table_name, metadata.tables[table_name].fmt, *, 1, value, *)
 		else :
-			RecordManager.delete(table_name, metadata.table[table_name].fmt, *, 0, 8, conditions)
+			RecordManager.delete(table_name, metadata.tables[table_name].fmt, *, 0, 8, conditions)
 
 
 def drop_table(table_name)
