@@ -95,57 +95,69 @@ def node_factory(fmt):
             self.keys.insert(insert_position, key)
             self.children.insert(insert_position, value)
 
-        def fuse_with(self, other):
-            """fuse the other node into self
-            assuming self is on the left, other is on the right"""
-            if self.is_leaf and other.is_leaf:
-                self.keys.extend(other.keys)
-                del self.children[-1]
-                self.children.extend(other.children)
+        def split(self, new_block_offset):
+            """split into 2 nodes, write self into block and the new node into new_block
+            return the key and value to be inserted into the parent node"""
 
-            elif not self.is_leaf and not other.is_leaf:
-                self.keys.extend(other.keys)
-                self.children.extend(other.children)
-
-            else:
-                raise ValueError('can\'t fuse a leaf node with a non-leaf node')
-
-        def _split(self):
-            """raw split, doesn't maintain the link in leaf nodes
-            return the new node"""
             split_point = self.n // 2 + 1
-
             new_node = Node(self.is_leaf,
                             self.keys[split_point:],
                             self.children[split_point:])
 
             self.keys = self.keys[:split_point]
             self.children = self.children[:split_point]
-            return new_node
 
-        def split_and_write(self, block, new_block):
-            """split into 2 nodes, write self into block and the new node into new_block
-            return the key and value to be inserted into the parent node"""
-            with pin(block), pin(new_block):
-                split_point = self.n // 2 + 1
-                new_node = Node(self.is_leaf,
-                                self.keys[split_point:],
-                                self.children[split_point:])
+            if self.is_leaf:
+                self.children.append(new_block_offset)  # maintain the leaf link
+                return new_node, new_node.keys[0], new_block_offset
+            else:
+                key = self.keys.pop()  # remove the largest key in the left node
+                # this is faster than remove the smallest key in the right
+                return new_node, key, new_block_offset
 
-                self.keys = self.keys[:split_point]
-                self.children = self.children[:split_point]
+        def fuse_with(self, other, parent, divide_point):
+            """fuse the other node into self
+            assuming self is on the left, other is on the right"""
+            if self.is_leaf and other.is_leaf:
+                self.keys.extend(other.keys)
+                del self.children[-1]
+                self.children.extend(other.children)
+                del parent.keys[divide_point]
+                del parent.children[divide_point + 1]
 
-                if self.is_leaf:
-                    self.children.append(new_block.block_offset)  # maintain the leaf link
-                    block.write(bytes(self))
-                    new_block.write(bytes(new_node))
-                    return new_node.keys[0], new_block.block_offset
-                else:
-                    key = self.keys.pop()  # remove the largest key in the left node
-                    # this is faster than remove the smallest key in the right
-                    block.write(bytes(self))
-                    new_block.write(bytes(new_node))
-                    return key, new_block.block_offset
+            elif not self.is_leaf and not other.is_leaf:
+                self.keys.append(parent.keys[divide_point])
+                self.keys.extend(other.keys)
+                self.children.extend(other.children)
+                del parent.keys[divide_point]
+                del parent.children[divide_point + 1]
+
+            else:
+                raise ValueError('can\'t fuse a leaf node with a non-leaf node')
+
+        def transfer_from_left(self, other, parent, divide_point):
+            if other.is_leaf and self.is_leaf:
+                self.keys.insert(0, other.keys.pop())
+                self.children.insert(0, other.children.pop(-2))
+                parent.keys[divide_point] = self.keys[0]
+            elif not other.is_leaf and not self.is_leaf:
+                self.keys.insert(0, parent.keys[divide_point])
+                self.children.insert(0, other.children.pop())
+                parent.keys[divide_point] = other.keys.pop()
+            else:
+                raise ValueError('cannot transfer within leaf nodes and internal nodes')
+
+        def transfer_from_right(self, other, parent, divide_point):
+            if self.is_leaf and other.is_leaf:
+                self.keys.append(other.keys.pop(0))
+                self.children.insert(-1, other.children.pop(0))
+                parent.keys[divide_point] = other.keys[0]
+            elif not self.is_leaf and not other.is_leaf:
+                self.keys.append(parent.keys[divide_point])
+                self.children.append(other.children.pop(0))
+                parent.keys[divide_point] = other.keys.pop(0)
+            else:
+                raise ValueError('cannot transfer within leaf nodes and internal nodes')
 
     return Node
 
@@ -239,7 +251,10 @@ class IndexManager:
     def _handle_overflow(self, node, block, path_to_parents):
         if not path_to_parents:  # the root overflowed
             new_block = self._get_free_block()
-            key, value = node.split_and_write(block, new_block)
+            new_node, key, value = node.split(new_block.block_offset)
+            with pin(block), pin(new_block):
+                block.write(bytes(node))
+                new_block.write(bytes(new_node))
             new_root_block = self._get_free_block()
             with pin(new_root_block):
                 new_root_node = self.Node(False,
@@ -251,7 +266,10 @@ class IndexManager:
         else:
             parent_offset = path_to_parents.pop()
             new_block = self._get_free_block()
-            key, value = node.split_and_write(block, new_block)
+            new_node, key, value = node.split(new_block.block_offset)
+            with pin(block), pin(new_block):
+                block.write(bytes(node))
+                new_block.write(bytes(new_node))
             parent_block = self._manager.get_file_block(self.index_file_path, parent_offset)
             parent_node = self.Node.frombytes(parent_block)
             parent_node.insert(key, value)
@@ -284,30 +302,6 @@ class IndexManager:
             else:  # split
                 self._handle_overflow(node, node_block, path_to_parents)
 
-    def _transfer_left_to_right(self, left, right, parent, divide_point):
-        if left.is_leaf and right.is_leaf:
-            right.keys.insert(0, left.keys.pop())
-            right.children.insert(0, left.children.pop(-2))
-            parent.keys[divide_point] = right.keys[0]
-        elif not left.is_leaf and not right.is_leaf:
-            right.keys.insert(0, left.keys.pop())
-            right.children.insert(0, left.children.pop())
-            parent.keys[divide_point] = right.keys[0]
-        else:
-            raise ValueError('cannot transfer within leaf nodes and internal nodes')
-
-    def _transfer_right_to_left(self, left, right, parent, divide_point):
-        if left.is_leaf and right.is_leaf:
-            left.keys.append(right.keys.pop(0))
-            left.children.insert(-1, right.children.pop(0))
-            parent.keys[divide_point] = right.keys[0]
-        elif not left.is_leaf and not right.is_leaf:
-            left.keys.append(right.keys.pop(0))
-            left.children.append(right.children.pop(0))
-            parent.keys[divide_point] = right.keys[0]
-        else:
-            raise ValueError('cannot transfer within leaf nodes and internal nodes')
-
     def _handle_underflow(self, node, block, path_to_parents):
         """handle underflow after deletion
         will try to transfer from the left sibling first
@@ -338,11 +332,11 @@ class IndexManager:
             with pin(left_sibling_block):
                 left_sibling = self.Node.frombytes(left_sibling_block.read())
             if len(left_sibling.keys) > ceil(node.n / 2):  # a transfer is possible
-                self._transfer_left_to_right(left_sibling, node, parent, my_position - 1)
+                node.transfer_from_left(left_sibling, parent, my_position - 1)
                 with pin(block), pin(left_sibling_block), pin(parent_block):
                     block.write(bytes(node))
-                    left_sibling_block.write(bytes(left_sibling))
-                    parent_block.write(bytes(parent))
+                left_sibling_block.write(bytes(left_sibling))
+                parent_block.write(bytes(parent))
                 return
         else:
             left_sibling = None  # no left sibling
@@ -354,7 +348,7 @@ class IndexManager:
             with pin(right_sibling_block):
                 right_sibling = self.Node.frombytes(right_sibling_block.read())
             if len(right_sibling.keys) > ceil(node.n / 2):  # a transfer is possible
-                self._transfer_right_to_left(node, right_sibling, parent, my_position)
+                node.transfer_from_right(right_sibling, parent, my_position)
                 with pin(block), pin(right_sibling_block), pin(parent_block):
                     block.write(bytes(node))
                     right_sibling_block.write(bytes(right_sibling))
@@ -364,23 +358,19 @@ class IndexManager:
             right_sibling = None  # no right sibling
 
         if left_sibling is not None:  # fuse with left sibling
-            left_sibling.fuse_with(node)
+            left_sibling.fuse_with(node, parent, my_position - 1)
             with pin(left_sibling_block):
                 left_sibling_block.write(bytes(left_sibling))
             self._delete_node(node, block)
-            del parent.keys[my_position - 1]
-            del parent.children[my_position]
             if len(parent.keys) >= ceil(node.n / 2):
                 return
             else:
                 self._handle_underflow(parent, parent_block, path_to_parents)
         else:  # fuse with right sibling
-            node.fuse_with(right_sibling)
+            node.fuse_with(right_sibling, parent, my_position)
             with pin(block):
                 block.write(bytes(node))
             self._delete_node(right_sibling, right_sibling_block)
-            del parent.keys[my_position]
-            del parent.children[my_position + 1]
             if len(parent.keys) >= ceil(node.n / 2):
                 return
             else:

@@ -51,85 +51,195 @@ class TestBPlusNode(unittest.TestCase):
         self.assertEqual(node.keys, [(0,), (2,), (3,), (4,), (6,), (8,)])
         self.assertEqual(node.children, [0, 1, 518, 2, 3, 4, 5])
 
-    def test_split_leaf(self):
-        Node = node_factory('<i')
-        Node.n = 4
-        node = Node(True, [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 42])
-        new_node = node._split()
-        self.assertEqual(node.is_leaf, True)
-        self.assertEqual(node.keys, [(0,), (1,), (2,)])
-        self.assertEqual(node.children, [0, 1, 2])
-        self.assertEqual(new_node.is_leaf, True)
-        self.assertEqual(new_node.keys, [(3,), (4,)])
-        self.assertEqual(new_node.children, [3, 4, 42])
-
-    def test_split_internal(self):
-        Node = node_factory('<i')
-        Node.n = 4
-        node = Node(False, [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 5])
-        new_node = node._split()
-        self.assertEqual(node.is_leaf, False)
-        self.assertEqual(node.keys, [(0,), (1,), (2,)])
-        self.assertEqual(node.children, [0, 1, 2])
-        self.assertEqual(new_node.is_leaf, False)
-        self.assertEqual(new_node.keys, [(3,), (4,)])
-        self.assertEqual(new_node.children, [3, 4, 5])
-
-    def test_fuse_leaves(self):
-        Node = node_factory('<i')
-        Node.n = 4
-        left = Node(True, [2], [6, 42])
-        right = Node(True, [5, 7], [25, 76])
-        left.fuse_with(right)
-        self.assertEqual(left.is_leaf, True)
-        self.assertEqual(left.keys, [(2,), (5,), (7,)])
-        self.assertEqual(left.children, [6, 25, 76])
-
-    def test_fuse_internals(self):
-        Node = node_factory('<i')
-        Node.n = 4
-        left = Node(False, [2], [6, 42])
-        right = Node(False, [5, 7], [25, 76])
-        left.fuse_with(right)
-        self.assertEqual(left.is_leaf, False)
-        self.assertEqual(left.keys, [(2,), (5,), (7,)])
-        self.assertEqual(left.children, [6, 42, 25, 76])
-
-    def test_mixed_fuse(self):
-        Node = node_factory('<i')
-        Node.n = 4
-        left = Node(True, [2], [6, 42])
-        right = Node(False, [5, 7], [25, 76])
-        with self.assertRaises(ValueError):
-            left.fuse_with(right)
-
-
-class TestBPlusNodeWithFile(unittest.TestCase):
-    def setUp(self):
-        with open('bar', 'wb') as file:
-            file.write(b'\0' * BufferManager.block_size * 100)
-
-    def tearDown(self):
-        os.remove('bar')
-
-    def test_leaf_split_and_write(self):
+    def test_leaf_split(self):
         Node = node_factory('<i')
         node = Node(True, [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 42])
         Node.n = 4
-        block = Block(BufferManager.block_size, 'bar', 6)
-        new_block = Block(BufferManager.block_size, 'bar', 50)
-        key, value = node.split_and_write(block, new_block)
+        new_node, key, value = node.split(50)
 
         self.assertEqual(key, (3,))
         self.assertEqual(value, 50)
-        node = Node.frombytes(block.read())
-        new_node = Node.frombytes(new_block.read())
         self.assertEqual(node.is_leaf, True)
         self.assertEqual(node.keys, [(0,), (1,), (2,)])
         self.assertEqual(node.children, [0, 1, 2, 50])
         self.assertEqual(new_node.is_leaf, True)
         self.assertEqual(new_node.keys, [(3,), (4,)])
         self.assertEqual(new_node.children, [3, 4, 42])
+
+    def test_internal_split(self):
+        Node = node_factory('<i')
+        node = Node(False, [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 42])
+        Node.n = 4
+        new_node, key, value = node.split(50)
+
+        self.assertEqual(key, (2,))
+        self.assertEqual(value, 50)
+        self.assertEqual(node.is_leaf, False)
+        self.assertEqual(node.keys, [(0,), (1,)])
+        self.assertEqual(node.children, [0, 1, 2])
+        self.assertEqual(new_node.is_leaf, False)
+        self.assertEqual(new_node.keys, [(3,), (4,)])
+        self.assertEqual(new_node.children, [3, 4, 42])
+
+    def test_transfer_from_left_leaf(self):
+        Node = node_factory('<i')
+        parent = Node(False,
+                      [1, 14, 35],
+                      [54, 21, 518, 42])
+
+        left = Node(True,
+                    [2, 7, 11],
+                    [32, 87, 43, 518])
+
+        right = Node(True,
+                     [15, 24, 31],
+                     [45, 67, 89, 42])
+
+        right.transfer_from_left(left, parent, 1)
+
+        self.assertEqual(parent.keys, _convert_to_tuple_list([1, 11, 35]))
+        self.assertEqual(parent.children, [54, 21, 518, 42])
+
+        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7]))
+        self.assertEqual(left.children, [32, 87, 518])
+
+        self.assertEqual(right.keys, _convert_to_tuple_list([11, 15, 24, 31]))
+        self.assertEqual(right.children, [43, 45, 67, 89, 42])
+
+    def test_transfer_from_left_internal(self):
+        Node = node_factory('<i')
+        parent = Node(False,
+                      [1, 14, 35],
+                      [54, 21, 518, 42])
+
+        left = Node(False,
+                    [2, 7, 11],
+                    [32, 87, 43, 518])
+
+        right = Node(False,
+                     [15, 24, 31],
+                     [45, 67, 89, 42])
+
+        right.transfer_from_left(left, parent, 1)
+
+        self.assertEqual(parent.keys, _convert_to_tuple_list([1, 11, 35]))
+        self.assertEqual(parent.children, [54, 21, 518, 42])
+
+        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7]))
+        self.assertEqual(left.children, [32, 87, 43])
+
+        self.assertEqual(right.keys, _convert_to_tuple_list([14, 15, 24, 31]))
+        self.assertEqual(right.children, [518, 45, 67, 89, 42])
+
+    def test_transfer_from_right_leaf(self):
+        Node = node_factory('<i')
+        parent = Node(False,
+                      [1, 14, 35],
+                      [54, 21, 518, 42])
+
+        left = Node(True,
+                    [2, 7, 11],
+                    [32, 87, 43, 518])
+
+        right = Node(True,
+                     [15, 24, 31],
+                     [45, 67, 89, 42])
+
+        left.transfer_from_right(right, parent, 1)
+
+        self.assertEqual(parent.keys, _convert_to_tuple_list([1, 24, 35]))
+        self.assertEqual(parent.children, [54, 21, 518, 42])
+
+        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7, 11, 15]))
+        self.assertEqual(left.children, [32, 87, 43, 45, 518])
+
+        self.assertEqual(right.keys, _convert_to_tuple_list([24, 31]))
+        self.assertEqual(right.children, [67, 89, 42])
+
+    def test_transfer_from_right_internal(self):
+        Node = node_factory('<i')
+        parent = Node(False,
+                      [1, 14, 35],
+                      [54, 21, 518, 42])
+
+        left = Node(False,
+                    [2, 7, 11],
+                    [32, 87, 43, 518])
+
+        right = Node(False,
+                     [15, 24, 31],
+                     [45, 67, 89, 42])
+
+        left.transfer_from_right(right, parent, 1)
+
+        self.assertEqual(parent.keys, _convert_to_tuple_list([1, 15, 35]))
+        self.assertEqual(parent.children, [54, 21, 518, 42])
+
+        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7, 11, 14]))
+        self.assertEqual(left.children, [32, 87, 43, 518, 45])
+
+        self.assertEqual(right.keys, _convert_to_tuple_list([24, 31]))
+        self.assertEqual(right.children, [67, 89, 42])
+
+    def test_fuse_leaves(self):
+        Node = node_factory('<i')
+        parent = Node(False,
+                      [1, 14, 35],
+                      [54, 21, 518, 42])
+
+        left = Node(True,
+                    [2, 7, 11],
+                    [32, 87, 43, 518])
+
+        right = Node(True,
+                     [15, 24, 31],
+                     [45, 67, 89, 42])
+
+        left.fuse_with(right, parent, 1)
+
+        self.assertEqual(parent.keys, _convert_to_tuple_list([1, 35]))
+        self.assertEqual(parent.children, [54, 21, 42])
+
+        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7, 11, 15, 24, 31]))
+        self.assertEqual(left.children, [32, 87, 43, 45, 67, 89, 42])
+
+    def test_fuse_internal(self):
+        Node = node_factory('<i')
+        parent = Node(False,
+                      [1, 14, 35],
+                      [54, 21, 518, 42])
+
+        left = Node(False,
+                    [2, 7, 11],
+                    [32, 87, 43, 518])
+
+        right = Node(False,
+                     [15, 24, 31],
+                     [45, 67, 89, 42])
+
+        left.fuse_with(right, parent, 1)
+
+        self.assertEqual(parent.keys, _convert_to_tuple_list([1, 35]))
+        self.assertEqual(parent.children, [54, 21, 42])
+
+        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7, 11, 14, 15, 24, 31]))
+        self.assertEqual(left.children, [32, 87, 43, 518, 45, 67, 89, 42])
+
+    def test_mixed_fuse(self):
+        Node = node_factory('<i')
+        parent = Node(False,
+                      [1, 14, 35],
+                      [54, 21, 518, 42])
+
+        left = Node(True,
+                    [2, 7, 11],
+                    [32, 87, 43, 518])
+
+        right = Node(False,
+                     [15, 24, 31],
+                     [45, 67, 89, 42])
+        with self.assertRaises(ValueError):
+            left.fuse_with(right, parent, 1)
 
 
 class TestIndexManager(unittest.TestCase):
@@ -193,7 +303,7 @@ class TestIndexManager(unittest.TestCase):
         result = manager.find([42, 7.6])
         self.assertEqual(result, 518)
 
-    @unittest.skip(' non-unique keys is no longer supported')
+    @unittest.skip('non-unique keys is no longer supported')
     def test_find_all(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
@@ -235,7 +345,7 @@ class TestIndexManager(unittest.TestCase):
         self.assertEqual(node.keys, [(233, 66.6)])
         self.assertEqual(node.children, [7, 0])
 
-    @unittest.skip(' non-unique keys is no longer supported')
+    @unittest.skip('non-unique keys is no longer supported')
     def test_multiple_delete(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
@@ -325,120 +435,6 @@ class TestPersistence(unittest.TestCase):
         self.assertEqual(node.children, [7, 0])
 
 
-class TestTransfer(unittest.TestCase):
-    def setUp(self):
-        try:
-            os.remove('spam')
-        except FileNotFoundError:
-            pass
-        self.manager = IndexManager('spam', '<i')
-
-    def tearDown(self):
-        try:
-            os.remove('spam')
-        except FileNotFoundError:
-            pass
-        del self.manager
-
-    def test_tranfer_left_to_right_leaf(self):
-        Node = self.manager.Node
-        parent = Node(False,
-                      [2, 15, 35],
-                      [54, 21, 518, 42])
-
-        left = Node(True,
-                    [2, 7, 11],
-                    [32, 87, 43, 518])
-
-        right = Node(True,
-                     [15, 24, 31],
-                     [45, 67, 89, 42])
-
-        self.manager._transfer_left_to_right(left, right, parent, 1)
-
-        self.assertEqual(parent.keys, _convert_to_tuple_list([2, 11, 35]))
-        self.assertEqual(parent.children, [54, 21, 518, 42])
-
-        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7]))
-        self.assertEqual(left.children, [32, 87, 518])
-
-        self.assertEqual(right.keys, _convert_to_tuple_list([11, 15, 24, 31]))
-        self.assertEqual(right.children, [43, 45, 67, 89, 42])
-
-    def test_tranfer_left_to_right_internal(self):
-        Node = self.manager.Node
-        parent = Node(False,
-                      [2, 15, 35],
-                      [54, 21, 518, 42])
-
-        left = Node(False,
-                    [2, 7, 11],
-                    [32, 87, 43, 518])
-
-        right = Node(False,
-                     [15, 24, 31],
-                     [45, 67, 89, 42])
-
-        self.manager._transfer_left_to_right(left, right, parent, 1)
-
-        self.assertEqual(parent.keys, _convert_to_tuple_list([2, 11, 35]))
-        self.assertEqual(parent.children, [54, 21, 518, 42])
-
-        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7]))
-        self.assertEqual(left.children, [32, 87, 43])
-
-        self.assertEqual(right.keys, _convert_to_tuple_list([11, 15, 24, 31]))
-        self.assertEqual(right.children, [518, 45, 67, 89, 42])
-
-    def test_tranfer_right_to_left_leaf(self):
-        Node = self.manager.Node
-        parent = Node(False,
-                      [2, 15, 35],
-                      [54, 21, 518, 42])
-
-        left = Node(True,
-                    [2, 7, 11],
-                    [32, 87, 43, 518])
-
-        right = Node(True,
-                     [15, 24, 31],
-                     [45, 67, 89, 42])
-
-        self.manager._transfer_right_to_left(left, right, parent, 1)
-
-        self.assertEqual(parent.keys, _convert_to_tuple_list([2, 24, 35]))
-        self.assertEqual(parent.children, [54, 21, 518, 42])
-
-        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7, 11, 15]))
-        self.assertEqual(left.children, [32, 87, 43, 45, 518])
-
-        self.assertEqual(right.keys, _convert_to_tuple_list([24, 31]))
-        self.assertEqual(right.children, [67, 89, 42])
-
-    def test_tranfer_right_to_left_internal(self):
-        Node = self.manager.Node
-        parent = Node(False,
-                      [2, 15, 35],
-                      [54, 21, 518, 42])
-
-        left = Node(False,
-                    [2, 7, 11],
-                    [32, 87, 43, 518])
-
-        right = Node(False,
-                     [15, 24, 31],
-                     [45, 67, 89, 42])
-
-        self.manager._transfer_right_to_left(left, right, parent, 1)
-
-        self.assertEqual(parent.keys, _convert_to_tuple_list([2, 24, 35]))
-        self.assertEqual(parent.children, [54, 21, 518, 42])
-
-        self.assertEqual(left.keys, _convert_to_tuple_list([2, 7, 11, 15]))
-        self.assertEqual(left.children, [32, 87, 43, 518, 45])
-
-        self.assertEqual(right.keys, _convert_to_tuple_list([24, 31]))
-        self.assertEqual(right.children, [67, 89, 42])
 
 
 class TestAdjustingDeletion(unittest.TestCase):
