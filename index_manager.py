@@ -96,8 +96,10 @@ def node_factory(fmt):
             self.children.insert(insert_position, value)
 
         def split(self, new_block_offset):
-            """split into 2 nodes, write self into block and the new node into new_block
-            return the key and value to be inserted into the parent node"""
+            """split into 2 nodes
+            if self is leaf node, maintain the link of leaf nodes with the new_block_offset supplied
+            otherwise the new_block_offset is not used
+            return the new node, the key and value to be inserted into the parent node"""
 
             split_point = self.n // 2 + 1
             new_node = Node(self.is_leaf,
