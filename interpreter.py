@@ -1,5 +1,6 @@
 import ply.lex as lex
 import ply.yacc as yacc
+from facade import MinisqlFacade
 
 reserved = (
     'SELECT', 'CREATE', 'INSERT', 'DELETE', 'DROP', 'TABLE', 'PRIMARY', 'KEY',
@@ -46,20 +47,23 @@ t_EQ = r'='
 t_NE = r'!='
 
 
-# Integer Literal
-def t_ICONST(t):
-    r'\d+([uU]|[lL]|[uU][lL]|[lL][uU])?'
-    t.value = int(t.value)
-    return t
-
 # Floating literal
 def t_FCONST(t):
     r'((\d+)(\.\d+)(e(\+|-)?(\d+))? | (\d+)e(\+|-)?(\d+))([lL]|[fF])?'
     t.value = float(t.value)
     return t
 
+# Integer Literal
+def t_ICONST(t):
+    r'\d+([uU]|[lL]|[uU][lL]|[lL][uU])?'
+    t.value = int(t.value)
+    return t
+
 # String literal
-t_SCONST = r'\'([^\\\n]|(\\.))*?\''
+def t_SCONST(t):
+    r'\'([^\\\n]|(\\.))*?\''
+    t.value = t.value.strip('\'')
+    return t
 
 reserved_map = {}
 
@@ -105,11 +109,17 @@ def p_create_statement(p):
     if type_code == 'create_index':
         print('is {}'.format(p[0]))
         print(p[1])
+        # facade_create_index(table_name, index_name, column_name)
         # todo: call the api to create index
     elif type_code == 'create_table':
-        print('is {}'.format(p[0]))
-        print(p[1])
-        # todo: call the api to create table
+        try:
+            if p[1]['primary']:
+                MinisqlFacade.create_table(p[1]['table_name'], p[1]['primary key'], p[1]['element_list'])
+            else:
+                MinisqlFacade.create_table(p[1]['table_name'], None, p[1]['element_list'])
+        except ValueError as ex:
+            print('Error! {}'.format(ex))
+
 
 
 def p_insert_statement(p):
@@ -120,6 +130,7 @@ def p_insert_statement(p):
     table_name = p[3]
     value_list = p[6]
     print('table name is {} and value list is {}'.format(table_name, value_list))
+    MinisqlFacade.insert_record(table_name, value_list)
     # todo : call the api to insert record
 
 def p_select_statement(p):
@@ -130,11 +141,12 @@ def p_select_statement(p):
     type_code = p[1]['type']
     if type_code == 'select_all':
         print('in select all')
-        print(p[1])
-        # todo : call the api to select all
+        result = MinisqlFacade.select_record_all(p[1]['table_name'])
+        print('result of select all:', result)
     elif type_code == 'conditional_select':
         print('in conditional select')
         print(p[1])
+        # facade_select_record_conditionally
         # todo : call the api to select with conditions
 
 
@@ -148,10 +160,12 @@ def p_delete_statement(p):
     if type_code == 'delete_all':
         print('in delete_all')
         print(p[1])
+        # facade_delete_record_all(table_name)
         # todo : call the api to delete all records of the table
     elif type_code == 'conditional_delete':
         print('in conditional delete')
         print(p[1])
+        # facade_delete_record_conditionally(table_name,conditions)
         # todo : call the api to delete with conditions
 
 def p_drop_statement(p):
@@ -163,10 +177,12 @@ def p_drop_statement(p):
     if type_code == 'drop_table':
         print('in drop table')
         print(p[1])
+        MinisqlFacade.drop_table(p[1]['table_name'])
         # todo : call the api to drop the specified table
     elif type_code == 'drop_index':
         print('in drop index')
         print(p[1])
+        MinisqlFacade.drop_index(p[1]['index_name'])
         # todo: call the api to drop the specified index
 
 
@@ -228,9 +244,11 @@ def p_column(p):
         column :  ID column_type
                 | ID column_type UNIQUE
     '''
-    p[0] = (p[1], p[2], False)
     if len(p) == 4:
-        p[0][2] = True
+        p[0] = (p[1], p[2], True)
+    else:
+        p[0] = (p[1], p[2], False)
+
 
 
 def p_column_type(p):
