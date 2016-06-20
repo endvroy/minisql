@@ -29,7 +29,7 @@ tokens = reserved + \
 
 t_ignore = ' \t\x0c'
 
-#Symbols
+# Symbols
 t_STAR = '\*'
 
 # Delimeters
@@ -53,17 +53,20 @@ def t_FCONST(t):
     t.value = float(t.value)
     return t
 
+
 # Integer Literal
 def t_ICONST(t):
     r'\d+([uU]|[lL]|[uU][lL]|[lL][uU])?'
     t.value = int(t.value)
     return t
 
+
 # String literal
 def t_SCONST(t):
     r'\'([^\\\n]|(\\.))*?\''
     t.value = t.value.strip('\'')
     return t
+
 
 reserved_map = {}
 
@@ -76,14 +79,13 @@ def t_ID(t):
     t.type = reserved_map.get(t.value.lower(), "ID")
     return t
 
+
 def t_error(t):
     print('Syntax Error at {}'.format(t.value))
     t.lexer.skip(1)
 
 
 lexer = lex.lex()
-
-
 
 
 # translation unit
@@ -121,7 +123,6 @@ def p_create_statement(p):
             print('Error! {}'.format(ex))
 
 
-
 def p_insert_statement(p):
     '''
         insert_statement : INSERT INTO ID VALUES LPAREN value_list RPAREN SEMICOLON
@@ -132,6 +133,7 @@ def p_insert_statement(p):
     print('table name is {} and value list is {}'.format(table_name, value_list))
     MinisqlFacade.insert_record(table_name, value_list)
     # todo : call the api to insert record
+
 
 def p_select_statement(p):
     '''
@@ -150,7 +152,6 @@ def p_select_statement(p):
         # todo : call the api to select with conditions
 
 
-
 def p_delete_statement(p):
     '''
         delete_statement : delete_all
@@ -160,13 +161,13 @@ def p_delete_statement(p):
     if type_code == 'delete_all':
         print('in delete_all')
         print(p[1])
-        # facade_delete_record_all(table_name)
-        # todo : call the api to delete all records of the table
+        MinisqlFacade.delete_record_all(p[1]['table_name'])
     elif type_code == 'conditional_delete':
         print('in conditional delete')
         print(p[1])
         # facade_delete_record_conditionally(table_name,conditions)
         # todo : call the api to delete with conditions
+
 
 def p_drop_statement(p):
     '''
@@ -177,8 +178,10 @@ def p_drop_statement(p):
     if type_code == 'drop_table':
         print('in drop table')
         print(p[1])
-        MinisqlFacade.drop_table(p[1]['table_name'])
-        # todo : call the api to drop the specified table
+        try:
+            MinisqlFacade.drop_table(p[1]['table_name'])
+        except ValueError as ex:
+            print('Error! {}'.format(ex))
     elif type_code == 'drop_index':
         print('in drop index')
         print(p[1])
@@ -248,7 +251,6 @@ def p_column(p):
         p[0] = (p[1], p[2], True)
     else:
         p[0] = (p[1], p[2], False)
-
 
 
 def p_column_type(p):
@@ -324,13 +326,14 @@ def p_conditions(p):
                     | conditions AND condition
                     | conditions OR condition
     '''
-    p[0] = []       # [condition, AND/OR, condition, AND/OR.....]
+    p[0] = []  # [condition, AND/OR, condition, AND/OR.....]
     if len(p) == 2:
         p[0].append(p[1])
     elif len(p) == 4:
         p[0] += p[1]
         p[0].append(p[2])
         p[0].append(p[3])
+
 
 def p_condition(p):
     '''
@@ -352,7 +355,7 @@ def p_delete_all(p):
     '''
     dict = {}
     dict['type'] = 'delete_all'
-    dict['table_id'] = p[3]
+    dict['table_name'] = p[3]
     p[0] = dict
 
 
@@ -367,7 +370,6 @@ def p_conditional_delete(p):
     p[0] = dict
 
 
-
 # Rules for drop statement
 def p_drop_table(p):
     '''
@@ -377,6 +379,7 @@ def p_drop_table(p):
     dict['type'] = 'drop_table'
     dict['table_name'] = p[3]
     p[0] = dict
+
 
 def p_drop_index(p):
     '''
