@@ -47,23 +47,24 @@ class MinisqlFacade:
             print('key is ', attributes[key_pos])
             manager.insert(key_list, position)  # index can be set on single attribute
 
-    # @staticmethod
-    # def create_index(table_name, index_name, column_name):
-    #     RecordManager.set_file_dir('schema/tables/' + table_name + '/')
-    #     position = -1
-    #     metadata = load_metadata()
-    #     metadata.add_index(table_name, index_name, column_name)
-    #     records = RecordManager.select(table_name, metadata.tables[table_name].fmt, with_index=0, record_offset=0,
-    #                                    conditions={})
-    #     for record in records:
-    #         file_path = RecordManager.file_dir + index.name + '.index'
-    #         manager = IndexManager(file_path, metadata.tables[table_name].fmt)
-    #         key_pos = list(metadata.tables[table_name].columns.keys()).index(column_name)
-    #         key = record[key_pos]
-    #         position += 1
-    #         manager.insert(key, position)
-    #     # position needs to be determined
-    #     metadata.dump()
+    @staticmethod
+    def create_index(table_name, index_name, column_name):
+        RecordManager.set_file_dir('schema/tables/' + table_name + '/')
+        position = -1
+        metadata = load_metadata()
+        metadata.add_index(table_name, index_name, column_name)
+        records = RecordManager.select(table_name, metadata.tables[table_name].fmt, with_index=False,conditions={})
+        file_path = RecordManager.file_dir + index_name + '.index'
+        table_target = metadata.tables[table_name]
+        fmt = ''.join(table_target.columns[column].fmt for column in table_target.indexes[index_name].columns)
+        manager = IndexManager(file_path, fmt)
+        for record in records:
+            key_pos = list(metadata.tables[table_name].columns.keys()).index(column_name)
+            key_list = list()
+            key_list.append(record[key_pos])
+            position += 1
+            manager.insert(key_list, position)
+        metadata.dump()
 
     @staticmethod
     def select_record_all(table_name):
@@ -140,11 +141,12 @@ class MinisqlFacade:
         shutil.rmtree('schema/tables/' + table_name + '/', True)
         metadata.dump()
 
-        # @staticmethod
-        # def drop_index(index_name):
-        #     metadata = load_metadata()
-        #     for (table_name, table) in metadata.tables:
-        #         if index_name in table.indexes:
-        #             metadata.drop_index(table_name, index_name)
-        #             shutil.rmtree('schema/tables/' + table_name + '/' + index_name + '.index', True)
-        #     metadata.dump()
+    @staticmethod
+    def drop_index(index_name):
+        metadata = load_metadata()
+        for (table_name, table) in metadata.tables.items():
+            print('table_indexes are ', table.indexes)
+            if index_name in table.indexes:
+                metadata.drop_index(table_name, index_name)
+                os.remove('schema/tables/' + table_name + '/' + index_name + '.index')
+        metadata.dump()

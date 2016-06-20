@@ -109,10 +109,7 @@ def p_create_statement(p):
     '''
     type_code = p[1]['type']
     if type_code == 'create_index':
-        print('is {}'.format(p[0]))
-        print(p[1])
-        # facade_create_index(table_name, index_name, column_name)
-        # todo: call the api to create index
+        MinisqlFacade.create_index(p[1]['table_name'], p[1]['index_name'], p[1]['column_name'])
     elif type_code == 'create_table':
         try:
             if p[1]['primary']:
