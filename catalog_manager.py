@@ -26,7 +26,7 @@ class Table:
         self.name = name
         self.columns = OrderedDict()
         self.indexes = {}
-        self.fmt = ''
+        self.fmt = '<'
 
     def add_column(self, column):
         self.columns[column.name] = column
