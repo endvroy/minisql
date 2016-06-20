@@ -148,4 +148,3 @@ class MinisqlFacade:
         #             metadata.drop_index(table_name, index_name)
         #             shutil.rmtree('schema/tables/' + table_name + '/' + index_name + '.index', True)
         #     metadata.dump()
-
