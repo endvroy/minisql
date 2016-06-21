@@ -78,7 +78,8 @@ class MinisqlFacade:
         RecordManager.set_file_dir('schema/tables/' + table_name + '/')
         metadata = load_metadata()
         RecordManager.delete(table_name, metadata.tables[table_name].fmt, with_index=False, conditions={})
-
+        for index in metadata.tables[table_name].indexes:
+            os.remove('schema/tables/' + table_name + '/' + index +'.index')
     # @staticmethod
     # def select_record_conditionally(table_name, conditions):  # support only equivalent search
     #     RecordManager.set_file_dir('schema/tables/' + table_name + '/')
@@ -144,7 +145,7 @@ class MinisqlFacade:
     @staticmethod
     def drop_index(index_name):
         metadata = load_metadata()
-        for (table_name, table) in metadata.tables.items():
+        for table_name, table in metadata.tables.items():
             print('table_indexes are ', table.indexes)
             if index_name in table.indexes:
                 metadata.drop_index(table_name, index_name)
