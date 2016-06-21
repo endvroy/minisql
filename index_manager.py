@@ -49,6 +49,34 @@ def iter_chunk(sequence, offset, chunk_size, total_chunks):
         yield sequence[offset + i * chunk_size: offset + (i + 1) * chunk_size]
 
 
+class LeafIterator:
+    def __init__(self, Node, index_file_path, node, key_position):
+        self.Node = Node
+        self.index_file_path = index_file_path
+        self.node = node
+        self.key_position = key_position
+        self.manager = BufferManager()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        value = self.node.children[self.key_position]
+        if self.key_position < len(self.node.keys):
+            key = self.node.keys[self.key_position]
+            self.key_position += 1
+            return key, value
+        else:  # jump
+            if value == 0:
+                raise StopIteration
+            else:
+                node_block = self.manager.get_file_block(self.index_file_path, value)
+                with pin(node_block):
+                    self.node = self.Node.frombytes(node_block.read())
+                self.key_position = 1
+                return self.node.keys[0], self.node.children[0]
+
+
 def node_factory(fmt):
     """receive a format string, return a Node class"""
 
@@ -173,18 +201,19 @@ class IndexManager:
         self.Node = node_factory(fmt)
         self.index_file_path = index_file_path
         self._manager = BufferManager()
-        self.meta_struct = Struct('<3i')  # total blocks, offset of the first deleted block, offset of the root node
+        self.meta_struct = Struct('<4i')  # total blocks, offset of the first deleted block, offset of the root node
         try:
             meta_block = self._manager.get_file_block(self.index_file_path, 0)
             with pin(meta_block):
-                self.total_blocks, self.first_deleted_block, self.root = self.meta_struct.unpack(
+                self.total_blocks, self.first_deleted_block, self.root, self.first_leaf = self.meta_struct.unpack(
                     meta_block.read()[:self.meta_struct.size])
         except FileNotFoundError:  # create and initialize an index file if not exits
-            self.total_blocks, self.first_deleted_block, self.root = 1, 0, 0
+            self.total_blocks, self.first_deleted_block, self.root, self.first_leaf = 1, 0, 0, 0
             with open(index_file_path, 'wb') as f:
                 f.write(self.meta_struct.pack(self.total_blocks,
                                               self.first_deleted_block,
-                                              self.root).ljust(BufferManager.block_size, b'\0'))
+                                              self.root,
+                                              self.first_leaf).ljust(BufferManager.block_size, b'\0'))
 
     def dump_header(self):
         """write the header info to the index file
@@ -194,7 +223,8 @@ class IndexManager:
         with pin(meta_block):
             meta_block.write(self.meta_struct.pack(self.total_blocks,
                                                    self.first_deleted_block,
-                                                   self.root).ljust(BufferManager.block_size, b'\0'))
+                                                   self.root,
+                                                   self.first_leaf).ljust(BufferManager.block_size, b'\0'))
 
     def _get_free_block(self):
         """return a free block and update header info, assuming this block will be used"""
@@ -277,6 +307,7 @@ class IndexManager:
             if not node.keys:  # root has no key at all; this node is no longer needed
                 if node.is_leaf:
                     self.root = 0
+                    self.first_leaf = 0
                 else:
                     self.root = node.children[0]
                 self._delete_node(node, block)
@@ -351,7 +382,7 @@ class IndexManager:
             node, node_block, path_to_parents = self._find_first_leaf(key)
             key_position = bisect.bisect_left(node.keys, key)
             if key_position < len(node.keys) and node.keys[key_position] == key:
-                return node.children[key_position]
+                return LeafIterator(self.Node, self.index_file_path, node, key_position)
             else:
                 return None
 
@@ -362,6 +393,7 @@ class IndexManager:
             block = self._get_free_block()
             with pin(block):
                 self.root = block.block_offset
+                self.first_leaf = self.root
                 node = self.Node(is_leaf=True,
                                  keys=[key],
                                  children=[value, 0])
@@ -397,3 +429,10 @@ class IndexManager:
                     self._handle_underflow(node, node_block, path_to_parents)
             else:  # key doesn't match
                 raise ValueError('index has no such key {}'.format(key))
+
+    def iter_leaves(self):
+        if self.first_leaf == 0:
+            raise RuntimeError('can\'t iter from empty index')
+        first_leaf_block = self._manager.get_file_block(self.index_file_path, self.first_leaf)
+        first_leaf = self.Node.frombytes(first_leaf_block.read())
+        return LeafIterator(self.Node, self.index_file_path, first_leaf, 0)
