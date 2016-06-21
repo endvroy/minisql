@@ -3,6 +3,22 @@ from struct import Struct
 import os
 
 
+def convert_str_to_bytes(attributes):
+    attr_list = list(attributes)
+    for index, item in enumerate(attr_list):
+        if isinstance(item, str):
+            attr_list[index] = item.encode('ASCII')
+    return tuple(attr_list)
+
+
+def convert_bytes_to_str(attributes):
+    attr_list = list(attributes)
+    for index, item in enumerate(attr_list):
+        if isinstance(item, bytes):
+            attr_list[index] = item.decode('ASCII').rstrip('\00')
+    return tuple(attr_list)
+
+
 class Record:
     # The format of header should be the same for all records files.
     header_format = '<ii'  # will be confirmed by RecordManager
@@ -17,7 +33,7 @@ class Record:
 
     def insert(self, attributes):
         """Insert the given record"""
-        record_info = self._convert_str_to_bytes(attributes) + (b'1', -1)  # valid bit, next free space
+        record_info = convert_str_to_bytes(attributes) + (b'1', -1)  # valid bit, next free space
         self.first_free_rec, self.rec_tail = self._parse_header()
         if self.first_free_rec >= 0:  # There are space in free list
             first_free_blk, local_offset = self._calc(self.first_free_rec)
@@ -70,7 +86,7 @@ class Record:
         """Modify the record at specified offset"""
         block_offset, local_offset = self._calc(record_offset)
         block = self.buffer_manager.get_file_block(self.filename, block_offset)
-        record_info = self._convert_str_to_bytes(attributes) + (b'1', -1)  # Updated record must be real
+        record_info = convert_str_to_bytes(attributes) + (b'1', -1)  # Updated record must be real
         with pin(block):
             data = block.read()
             records = self._parse_block_data(data, block_offset)
@@ -89,7 +105,7 @@ class Record:
             records = self._parse_block_data(data, block_offset)
             if records[local_offset][-2] == b'0':
                 raise RuntimeError('Cannot read an empty record')
-        return self._convert_bytes_to_str(tuple(records[local_offset][:-2]))
+        return convert_bytes_to_str(tuple(records[local_offset][:-2]))
 
     def scanning_select(self, conditions):
         # condition should be a dict: { attribute offset : {operator : value } }
@@ -98,8 +114,8 @@ class Record:
         for block_offset in range(total_blk):
             block = self.buffer_manager.get_file_block(self.filename, block_offset)
             records = self._parse_block_data(block.read(), block_offset)
-            result_set += [self._convert_bytes_to_str(record[:-2]) for record in records
-                           if self._check_condition(record, conditions) is True]
+            result_set += tuple([convert_bytes_to_str(record[:-2]) for record in records
+                                 if self._check_condition(record, conditions) is True])
         return result_set
 
     def scanning_delete(self, conditions):
@@ -109,7 +125,7 @@ class Record:
             block = self.buffer_manager.get_file_block(self.filename, block_offset)
             records = self._parse_block_data(block.read(), block_offset)
             for i, record in enumerate(records):
-                if self._check_condition(self._convert_bytes_to_str(record), conditions):
+                if self._check_condition(convert_bytes_to_str(record), conditions):
                     records[i][-2] = b'0'
                     records[i][-1] = self.first_free_rec
                     self.first_free_rec = record_offset
@@ -120,12 +136,12 @@ class Record:
     def scanning_update(self, conditions, attributes):
         # The file header won't change when updating
         total_blk = self._calc(self.rec_tail)[0] + 1
-        new_record = self._convert_str_to_bytes(attributes) + (b'1', -1)
+        new_record = convert_str_to_bytes(attributes) + (b'1', -1)
         for block_offset in range(total_blk):
             block = self.buffer_manager.get_file_block(self.filename, block_offset)
             records = self._parse_block_data(block.read(), block_offset)
             for i, record in enumerate(records):
-                if self._check_condition(self._convert_bytes_to_str(record), conditions):
+                if self._check_condition(convert_bytes_to_str(record), conditions):
                     records[i] = new_record
             block.write(self._generate_new_data(records, block_offset))
 
@@ -140,27 +156,12 @@ class Record:
             return block_offset, local_offset
 
     @staticmethod
-    def _convert_str_to_bytes(attributes):
-        attr_list = list(attributes)
-        for index, item in enumerate(attr_list):
-            if isinstance(item, str):
-                attr_list[index] = item.encode('ASCII')
-        return tuple(attr_list)
-
-    @staticmethod
-    def _convert_bytes_to_str(attributes):
-        attr_list = list(attributes)
-        for index, item in enumerate(attr_list):
-            if isinstance(item, bytes):
-                attr_list[index] = item.decode('ASCII').rstrip('\00')
-        return tuple(attr_list)
-
-    @staticmethod
     def _check_condition(record, conditions):
         if record[-2] == b'0':  # check the valid bit, return false when meet empty record
             return False
+        str_record = convert_bytes_to_str(record[:-2])
         for position, condition in conditions.items():
-            value = record[position]
+            value = str_record[position]
             for operator_type, value_restriction in condition.items():
                 if operator_type == '=':
                     if value != value_restriction:
