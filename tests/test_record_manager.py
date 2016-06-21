@@ -1,5 +1,5 @@
 import unittest
-from record_manager import RecordManager, Record
+from record_manager import RecordManager, Record, convert_bytes_to_str, convert_str_to_bytes
 import os
 
 
@@ -56,10 +56,10 @@ class TestRecord(unittest.TestCase):
 
     def test_attributes_conversion(self):
         record = Record('foo.table', '<idi')
-        self.assertEqual((record._convert_str_to_bytes((1, 'abcd', 3, 'qweqwe'))),
+        self.assertEqual((convert_str_to_bytes((1, 'abcd', 3, 'qweqwe'))),
                          (1, b'abcd', 3, b'qweqwe'))
 
-        self.assertEqual(record._convert_bytes_to_str((1, b'abcd', 3, b'qweqwe')),
+        self.assertEqual(convert_bytes_to_str((1, b'abcd', 3, b'qweqwe')),
                          (1, 'abcd', 3, 'qweqwe'))
 
     def test_without_index(self):
