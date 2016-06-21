@@ -1,8 +1,8 @@
 import unittest
 import os
-from buffer_manager import Block, BufferManager
+from buffer_manager import pin, BufferManager
 from index_manager import _convert_to_tuple, _convert_to_tuple_list, _encode_sequence, _decode_sequence, iter_chunk
-from index_manager import node_factory, IndexManager
+from index_manager import node_factory, LeafIterator, IndexManager
 
 
 class TestHelperFunctions(unittest.TestCase):
@@ -25,6 +25,58 @@ class TestHelperFunctions(unittest.TestCase):
         octets = b'12345678'
         chunks = list(iter_chunk(octets, 2, 3, 2))
         self.assertEqual(chunks, [b'345', b'678'])
+
+
+class TestSingleIter(unittest.TestCase):
+    def test_single_iter(self):
+        Node = node_factory('<i')
+        node = Node(True,
+                    [1, 14, 35],
+                    [54, 21, 518, 0])
+        iterator = LeafIterator(Node, 'foobar', node, 1)
+        self.assertEqual(next(iterator), ((14,), 21))
+        self.assertEqual(next(iterator), ((35,), 518))
+        with self.assertRaises(StopIteration):
+            next(iterator)
+
+
+class TestChildIterator(unittest.TestCase):
+    def setUp(self):
+        Node = node_factory('<i')
+        left = Node(True,
+                    [2, 7, 11],
+                    [32, 87, 43, 2])
+
+        right = Node(True,
+                     [15, 24, 31],
+                     [45, 67, 89, 0])
+
+        with open('foobar', 'wb') as file:
+            pass
+
+        manager = BufferManager()
+
+        block = manager.get_file_block('foobar', 0)
+        with pin(block):
+            block.write(b'\0' * BufferManager.block_size)
+
+        block = manager.get_file_block('foobar', 1)
+        with pin(block):
+            block.write(bytes(left))
+
+        block = manager.get_file_block('foobar', 2)
+        with pin(block):
+            block.write(bytes(right))
+
+        self.Node = Node
+        self.left = left
+
+    def tearDown(self):
+        os.remove('foobar')
+
+    def test_jump_iter(self):
+        iterator = LeafIterator(self.Node, 'foobar', self.left, 1)
+        self.assertEqual(list(iterator), [((7,), 87), ((11,), 43), ((15,), 45), ((24,), 67), ((31,), 89)])
 
 
 class TestBPlusNode(unittest.TestCase):
@@ -301,7 +353,7 @@ class TestIndexManager(unittest.TestCase):
         manager.insert([42, 7.6], 518)
         manager.insert([233, 66.6], 7)
         result = manager.find([42, 7.6])
-        self.assertEqual(result, 518)
+        self.assertEqual(next(result), ((42, 7.6), 518))
 
     @unittest.skip('non-unique keys is no longer supported')
     def test_find_all(self):
@@ -433,8 +485,6 @@ class TestPersistence(unittest.TestCase):
         self.assertEqual(node.is_leaf, True)
         self.assertEqual(node.keys, [(233, 66.6)])
         self.assertEqual(node.children, [7, 0])
-
-
 
 
 class TestAdjustingDeletion(unittest.TestCase):
