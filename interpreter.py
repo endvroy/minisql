@@ -144,8 +144,8 @@ def p_select_statement(p):
         print('result of select all:', result)
     elif type_code == 'conditional_select':
         print('in conditional select')
-        result = MinisqlFacade.select_record_conditionally_without_index(p[1]['table_name'], p[1]['conditions'])
-        print('result of select all:', result)
+        result = MinisqlFacade.select_record_conditionally(p[1]['table_name'], p[1]['conditions'])
+        print('result of select conditionally:', result)
         # todo : call the api to select with conditions
 
 
@@ -160,8 +160,7 @@ def p_delete_statement(p):
         MinisqlFacade.delete_record_all(p[1]['table_name'])
     elif type_code == 'conditional_delete':
         print('in conditional delete')
-        print(p[1])
-        MinisqlFacade.delete_record_conditionally_without_index(p[1]['table_name'], p[1]['conditions'])
+        MinisqlFacade.delete_record_conditionally(p[1]['table_name'], p[1]['conditions'])
         # todo : call the api to delete with conditions
 
 
@@ -173,14 +172,12 @@ def p_drop_statement(p):
     type_code = p[1]['type']
     if type_code == 'drop_table':
         print('in drop table')
-        print(p[1])
         try:
             MinisqlFacade.drop_table(p[1]['table_name'])
         except ValueError as ex:
             print('Error! {}'.format(ex))
     elif type_code == 'drop_index':
         print('in drop index')
-        print(p[1])
         MinisqlFacade.drop_index(p[1]['index_name'])
         # todo: call the api to drop the specified index
 
