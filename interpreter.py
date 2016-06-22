@@ -1,6 +1,7 @@
 import ply.lex as lex
 import ply.yacc as yacc
 from facade import MinisqlFacade
+import sys
 
 reserved = (
     'SELECT', 'CREATE', 'INSERT', 'DELETE', 'DROP', 'TABLE', 'PRIMARY', 'KEY',
@@ -139,18 +140,21 @@ def p_select_statement(p):
                         | conditional_select
     '''
     type_code = p[1]['type']
-    if type_code == 'select_all':
-        records, columns = MinisqlFacade.select_record_all(p[1]['table_name'])
+    try:
+        columns = MinisqlFacade.get_columns_name(p[1]['table_name'])
         columns_format = ' | '.join(column for column in columns)
-        print('*'*20)
+        if type_code == 'select_all':
+            records = MinisqlFacade.select_record_all(p[1]['table_name'])
+        else: # conditional select
+            records = MinisqlFacade.select_record_conditionally(p[1]['table_name'], p[1]['conditions'])
+        print('*****'*len(columns))
         print(columns_format)
-        print('*'*20)
+        print('*****'*len(columns))
         for record in records:
             record_str = ' | '.join(str(item) for item in record)
             print(record_str)
-    elif type_code == 'conditional_select':
-        records = MinisqlFacade.select_record_conditionally_without_index(p[1]['table_name'], p[1]['conditions'])
-        print('result of select all:', records)
+    except KeyError:
+        print('Error! The table {} is not exist!'.format(p[1]['table_name']))
 
 
 def p_delete_statement(p):
@@ -160,12 +164,12 @@ def p_delete_statement(p):
     '''
     type_code = p[1]['type']
     if type_code == 'delete_all':
-        print('in delete_all')
-        MinisqlFacade.delete_record_all(p[1]['table_name'])
+        try:
+            MinisqlFacade.delete_record_all(p[1]['table_name'])
+        except Exception as ex:
+            print('Error! ', ex)
     elif type_code == 'conditional_delete':
-        print('in conditional delete')
         MinisqlFacade.delete_record_conditionally(p[1]['table_name'], p[1]['conditions'])
-        # todo : call the api to delete with conditions
 
 
 def p_drop_statement(p):
@@ -191,8 +195,9 @@ def p_quit_statement(p):
     '''
         quit_statement : QUIT SEMICOLON
     '''
-    print('in quit')
-    # todo: quit Minisql
+    print('bye bye!')
+    MinisqlFacade.quit()
+    sys.exit()
 
 
 # Rules for create statement
@@ -217,7 +222,6 @@ def p_create_index(p):
     '''
         create_index : CREATE INDEX ID ON ID LPAREN ID RPAREN SEMICOLON
     '''
-    print('create index')
     dict = {}
     dict['type'] = 'create_index'
     dict['index_name'] = p[3]
