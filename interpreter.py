@@ -164,8 +164,7 @@ def p_delete_statement(p):
         MinisqlFacade.delete_record_all(p[1]['table_name'])
     elif type_code == 'conditional_delete':
         print('in conditional delete')
-        print(p[1])
-        MinisqlFacade.delete_record_conditionally_without_index(p[1]['table_name'], p[1]['conditions'])
+        MinisqlFacade.delete_record_conditionally(p[1]['table_name'], p[1]['conditions'])
         # todo : call the api to delete with conditions
 
 
