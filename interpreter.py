@@ -1,6 +1,7 @@
 import ply.lex as lex
 import ply.yacc as yacc
 from facade import MinisqlFacade
+import sys
 
 reserved = (
     'SELECT', 'CREATE', 'INSERT', 'DELETE', 'DROP', 'TABLE', 'PRIMARY', 'KEY',
@@ -99,7 +100,7 @@ def p_sql_statement(p):
                         | drop_statement
                         | quit_statement
     '''
-    print('sql statement')
+    pass
 
 
 def p_create_statement(p):
@@ -116,21 +117,22 @@ def p_create_statement(p):
                 MinisqlFacade.create_table(p[1]['table_name'], p[1]['primary key'], p[1]['element_list'])
             else:
                 MinisqlFacade.create_table(p[1]['table_name'], None, p[1]['element_list'])
-        except ValueError as ex:
-            print('Error! {}'.format(ex))
+            print('Table {} is created.'.format(p[1]['table_name']))
+        except ValueError as value_error:
+            print('Error! {}'.format(value_error))
 
 
 def p_insert_statement(p):
     '''
         insert_statement : INSERT INTO ID VALUES LPAREN value_list RPAREN SEMICOLON
     '''
-    print('in insert statement')
     table_name = p[3]
     value_list = p[6]
-    print('table name is {} and value list is {}'.format(table_name, value_list))
-    MinisqlFacade.insert_record(table_name, value_list)
-    # todo : call the api to insert record
-
+    try:
+        MinisqlFacade.insert_record(table_name, value_list)
+    except Exception as ex:
+        print('Insertion failed.')
+        print('Error message: ', ex)
 
 def p_select_statement(p):
     '''
@@ -138,15 +140,21 @@ def p_select_statement(p):
                         | conditional_select
     '''
     type_code = p[1]['type']
-    if type_code == 'select_all':
-        print('in select all')
-        result = MinisqlFacade.select_record_all(p[1]['table_name'])
-        print('result of select all:', result)
-    elif type_code == 'conditional_select':
-        print('in conditional select')
-        result = MinisqlFacade.select_record_conditionally(p[1]['table_name'], p[1]['conditions'])
-        print('result of select conditionally:', result)
-        # todo : call the api to select with conditions
+    try:
+        columns = MinisqlFacade.get_columns_name(p[1]['table_name'])
+        columns_format = ' | '.join(column for column in columns)
+        if type_code == 'select_all':
+            records = MinisqlFacade.select_record_all(p[1]['table_name'])
+        else: # conditional select
+            records = MinisqlFacade.select_record_conditionally(p[1]['table_name'], p[1]['conditions'])
+        print('*****'*len(columns))
+        print(columns_format)
+        print('*****'*len(columns))
+        for record in records:
+            record_str = ' | '.join(str(item) for item in record)
+            print(record_str)
+    except KeyError:
+        print('Error! The table {} is not exist!'.format(p[1]['table_name']))
 
 
 def p_delete_statement(p):
@@ -156,12 +164,12 @@ def p_delete_statement(p):
     '''
     type_code = p[1]['type']
     if type_code == 'delete_all':
-        print('in delete_all')
-        MinisqlFacade.delete_record_all(p[1]['table_name'])
+        try:
+            MinisqlFacade.delete_record_all(p[1]['table_name'])
+        except Exception as ex:
+            print('Error! ', ex)
     elif type_code == 'conditional_delete':
-        print('in conditional delete')
         MinisqlFacade.delete_record_conditionally(p[1]['table_name'], p[1]['conditions'])
-        # todo : call the api to delete with conditions
 
 
 def p_drop_statement(p):
@@ -171,23 +179,25 @@ def p_drop_statement(p):
     '''
     type_code = p[1]['type']
     if type_code == 'drop_table':
-        print('in drop table')
         try:
             MinisqlFacade.drop_table(p[1]['table_name'])
         except ValueError as ex:
-            print('Error! {}'.format(ex))
+            print('Error! ', ex)
     elif type_code == 'drop_index':
-        print('in drop index')
-        MinisqlFacade.drop_index(p[1]['index_name'])
-        # todo: call the api to drop the specified index
+        try:
+            MinisqlFacade.drop_index(p[1]['index_name'])
+        except Exception as ex:
+            print('Error! ', ex)
+
 
 
 def p_quit_statement(p):
     '''
         quit_statement : QUIT SEMICOLON
     '''
-    print('in quit')
-    # todo: quit Minisql
+    print('bye bye!')
+    MinisqlFacade.quit()
+    sys.exit()
 
 
 # Rules for create statement
@@ -196,7 +206,6 @@ def p_create_table(p):
         create_table : CREATE TABLE ID LPAREN column_list RPAREN SEMICOLON
                     | CREATE TABLE ID LPAREN column_list COMMA primary_clause RPAREN SEMICOLON
     '''
-    print('create table')
     dict = {}
     dict['type'] = 'create_table'
     dict['table_name'] = p[3]
@@ -213,7 +222,6 @@ def p_create_index(p):
     '''
         create_index : CREATE INDEX ID ON ID LPAREN ID RPAREN SEMICOLON
     '''
-    print('create index')
     dict = {}
     dict['type'] = 'create_index'
     dict['index_name'] = p[3]
@@ -390,6 +398,7 @@ def p_error(p):
 
 
 parser = yacc.yacc(method='LALR')
+
 
 if __name__ == '__main__':
     while True:

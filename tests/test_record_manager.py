@@ -20,15 +20,15 @@ class TestRecord(unittest.TestCase):
 
     def test_header(self):
         record = Record('foo.table', '<idi')
-        self.assertEqual(record._parse_header(), (-1, 0))
+        self.assertEqual(record._parse_header(), (-1, -1))
         record.first_free_rec = 2
         record.rec_tail = 2
         record._update_header()
         self.assertEqual(record._parse_header(), (2, 2))
         record.first_free_rec = -1
-        record.rec_tail = 0
+        record.rec_tail = -1
         record._update_header()
-        self.assertEqual(record._parse_header(), (-1, 0))
+        self.assertEqual(record._parse_header(), (-1, -1))
 
     def test_record(self):
         record = Record('foo.table', '<idi')
@@ -36,19 +36,19 @@ class TestRecord(unittest.TestCase):
         record.insert((-1, -1.5, 1))
         self.assertEqual(record.read(0), (1, 2.0, -1))
         self.assertEqual(record.read(1), (-1, -1.5, 1))  # test insert and read
-        self.assertEqual(record._parse_header(), (-1, 2))
+        self.assertEqual(record._parse_header(), (-1, 1))
         record.remove(1)
-        self.assertEqual(record._parse_header(), (1, 2))  # test remove, free list
+        self.assertEqual(record._parse_header(), (1, 1))  # test remove, free list
         record.insert((1, 2.0, 3))
         self.assertEqual(record.read(1), (1, 2.0, 3))
         self.assertEqual(record.read(0), (1, 2.0, -1))
-        self.assertEqual(record._parse_header(), (-1, 2))  # test free list
+        self.assertEqual(record._parse_header(), (-1, 1))  # test free list
         record.insert((1, 1.0, 1))
         record.remove(2)
         record.remove(0)
-        self.assertEqual(record._parse_header(), (0, 3))  # test free list
+        self.assertEqual(record._parse_header(), (0, 2))  # test free list
         record.insert((1, 1.0, 1))  # offset 0 and 1 are legal
-        self.assertEqual(record._parse_header(), (2, 3))
+        self.assertEqual(record._parse_header(), (2, 2))
         with self.assertRaises(IndexError):
             record.remove(4)
         record.modify((1, 1.3, -1), 1)  # test modify

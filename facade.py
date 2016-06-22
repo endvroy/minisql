@@ -2,6 +2,7 @@ from index_manager import IndexManager
 from record_manager import RecordManager
 from catalog_manager import Metadata, init, load_metadata, Column
 
+
 import os
 import shutil
 
@@ -22,6 +23,17 @@ import shutil
 #
 
 class MinisqlFacade:
+    @staticmethod
+    def get_columns_name(table_name):
+        metadata = load_metadata()
+        columns = list(metadata.tables[table_name].columns.keys())
+        return columns
+
+    @staticmethod
+    def quit():
+        buffer_manager = BufferManager()
+        buffer_manager.flush_all()
+
     @staticmethod
     def create_table(table_name, primary_key, columns):
         os.makedirs('schema/tables/' + table_name, exist_ok=True)
@@ -53,13 +65,18 @@ class MinisqlFacade:
             key_pos = list(metadata.tables[table_name].columns.keys()).index(index.columns[0])
             key_list = list()
             key_list.append(attributes[key_pos])
-            manager.insert(key_list, position)  # index can be set on single attribute
-            manager.dump_header()
+            try:
+                manager.insert(key_list, position)  # index can be set on single attribute
+                manager.dump_header()
+            except ValueError:  # duplicated key, the inserted record should be deleted
+                RecordManager.delete(table_name, metadata.tables[table_name].fmt, with_index=True,
+                                     record_offset=position)
+                raise
 
     @staticmethod
     def create_index(table_name, index_name, column_name):
         RecordManager.set_file_dir('schema/tables/' + table_name + '/')
-        offset = 0
+        offset = -1
         metadata = load_metadata()
         metadata.add_index(table_name, index_name, column_name)
         records = RecordManager.select(table_name, metadata.tables[table_name].fmt, with_index=False, conditions={})
@@ -102,7 +119,6 @@ class MinisqlFacade:
         condition_convert[key_pos] = condition_inter
         return condition_convert
 
-
     @staticmethod
     def _convert_conditions_dual(table_name, *conditions):
         metadata = load_metadata()
@@ -112,7 +128,7 @@ class MinisqlFacade:
             condition_convert = dict()
             condition_inter[conditions[0][1]] = conditions[0][2]
             condition_inter[conditions[1][1]] = conditions[1][2]
-            condition_convert[key_pos] = condition_inter        
+            condition_convert[key_pos] = condition_inter
             return condition_convert
         else:
             condition_convert = dict()
@@ -124,11 +140,14 @@ class MinisqlFacade:
             return condition_convert
 
 
+
+
     @staticmethod
     def select_record_conditionally_without_index(table_name, condition):  # support only equivalent search
         metadata = load_metadata()
         condition_convert = MinisqlFacade._convert_conditions(table_name, condition)
         records = RecordManager.select(table_name, metadata.tables[table_name].fmt, with_index=False, conditions=condition_convert)
+
 
         return records
 
@@ -178,7 +197,7 @@ class MinisqlFacade:
                 records.append(RecordManager.select(table_name,
                                                metadata.tables[table_name].fmt,
                                                with_index=True,
-                                               record_offset=value-1))
+                                               record_offset=value))
             elif operator == '>':
                 it_key, value = next(itr)
                 key_list = list()
@@ -188,7 +207,7 @@ class MinisqlFacade:
                     records.append(RecordManager.select(table_name,
                                                    metadata.tables[table_name].fmt,
                                                    with_index=True,
-                                                   record_offset=value-1))
+                                                   record_offset=value))
             elif operator == '<':
                 for i in manager.iter_leaves():
                     if i[0] != it_key:
@@ -196,7 +215,7 @@ class MinisqlFacade:
                         records.append(RecordManager.select(table_name,
                                                        metadata.tables[table_name].fmt,
                                                        with_index=True,
-                                                       record_offset=value-1))
+                                                       record_offset=value))
                     else:
                         break
             else:
@@ -221,7 +240,7 @@ class MinisqlFacade:
                 records=list(set(record_1).union(set(record_2)))
             else:
                 pass
-            # link the records outside
+                # link the records outside
         else:
             pass
 
@@ -246,7 +265,7 @@ class MinisqlFacade:
                 RecordManager.delete(table_name,
                                     metadata.tables[table_name].fmt,
                                     with_index=True,
-                                    record_offset=value-1)
+                                    record_offset=value)
                 manager.delete(key_list)
             elif operator == '>':
                 it_key, value = next(itr)
@@ -257,7 +276,7 @@ class MinisqlFacade:
                     RecordManager.delete(table_name,
                                     metadata.tables[table_name].fmt,
                                     with_index=True,
-                                    record_offset=value-1)
+                                    record_offset=value)
                     manager.delete(it_key[0])
             elif operator == '<':
                 for i in manager.iter_leaves():
@@ -266,13 +285,14 @@ class MinisqlFacade:
                         RecordManager.delete(table_name,
                                     metadata.tables[table_name].fmt,
                                     with_index=True,
-                                    record_offset=value-1)
+                                    record_offset=value)
                         manager.delete(it_key[0])
                     else:
                         break
             manager.dump_header()
         else:
             MinisqlFacade.delete_record_conditionally_without_index(table_name, condition)
+
 
 
     @staticmethod
@@ -299,7 +319,7 @@ class MinisqlFacade:
                     RecordManager.delete(table_name,
                                         metadata.tables[table_name].fmt,
                                         with_index=1,
-                                        record_offset=value-1)
+                                        record_offset=value)
 
             #each tuple has its PRIMARY KEY index
             #actually only support single attribute index
@@ -308,7 +328,7 @@ class MinisqlFacade:
                 MinisqlFacade._delete_single_condition(table_name, conditions[2])
             else:
                 pass
-            # link the records outside
+                # link the records outside
         else:
             pass
 

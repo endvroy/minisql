@@ -233,7 +233,7 @@ class RecordManager:
             raise RuntimeError('The file for table \'{}\' has already exists'.format(table_name))
         else:
             with open(file_path, 'w+b') as file:
-                file.write(cls.header_struct.pack(*(-1, 0)))
+                file.write(cls.header_struct.pack(*(-1, -1)))
 
     @classmethod
     def insert(cls, table_name, fmt, attributes):
