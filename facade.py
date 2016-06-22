@@ -24,6 +24,17 @@ import shutil
 
 class MinisqlFacade:
     @staticmethod
+    def get_columns_name(table_name):
+        metadata = load_metadata()
+        columns = list(metadata.tables[table_name].columns.keys())
+        return columns
+
+    @staticmethod
+    def quit():
+        buffer_manager = BufferManager()
+        buffer_manager.flush_all()
+
+    @staticmethod
     def create_table(table_name, primary_key, columns):
         os.makedirs('schema/tables/' + table_name, exist_ok=True)
         metadata = load_metadata()  # PK can be set on only one attribute
@@ -88,12 +99,6 @@ class MinisqlFacade:
         RecordManager.set_file_dir('schema/tables/' + table_name + '/')
         records = RecordManager.select(table_name, metadata.tables[table_name].fmt, with_index=False, conditions={})
         return records
-
-    @staticmethod
-    def get_columns_name(table_name):
-        metadata = load_metadata()
-        columns = list(metadata.tables[table_name].columns.keys())
-        return columns
 
     @staticmethod
     def delete_record_all(table_name):
@@ -335,8 +340,3 @@ class MinisqlFacade:
                 metadata.drop_index(table_name, index_name)
                 os.remove('schema/tables/' + table_name + '/' + index_name + '.index')
         metadata.dump()
-
-    @staticmethod
-    def quit():
-        buffer_manager = BufferManager()
-        buffer_manager.flush_all()
