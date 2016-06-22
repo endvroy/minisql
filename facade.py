@@ -76,7 +76,7 @@ class MinisqlFacade:
     @staticmethod
     def create_index(table_name, index_name, column_name):
         RecordManager.set_file_dir('schema/tables/' + table_name + '/')
-        offset = 0
+        offset = -1
         metadata = load_metadata()
         metadata.add_index(table_name, index_name, column_name)
         records = RecordManager.select(table_name, metadata.tables[table_name].fmt, with_index=False, conditions={})
@@ -197,7 +197,7 @@ class MinisqlFacade:
                 records.append(RecordManager.select(table_name,
                                                metadata.tables[table_name].fmt,
                                                with_index=True,
-                                               record_offset=value-1))
+                                               record_offset=value))
             elif operator == '>':
                 it_key, value = next(itr)
                 key_list = list()
@@ -207,7 +207,7 @@ class MinisqlFacade:
                     records.append(RecordManager.select(table_name,
                                                    metadata.tables[table_name].fmt,
                                                    with_index=True,
-                                                   record_offset=value-1))
+                                                   record_offset=value))
             elif operator == '<':
                 for i in manager.iter_leaves():
                     if i[0] != it_key:
@@ -215,7 +215,7 @@ class MinisqlFacade:
                         records.append(RecordManager.select(table_name,
                                                        metadata.tables[table_name].fmt,
                                                        with_index=True,
-                                                       record_offset=value-1))
+                                                       record_offset=value))
                     else:
                         break
             else:
@@ -265,7 +265,7 @@ class MinisqlFacade:
                 RecordManager.delete(table_name,
                                     metadata.tables[table_name].fmt,
                                     with_index=True,
-                                    record_offset=value-1)
+                                    record_offset=value)
                 manager.delete(key_list)
             elif operator == '>':
                 it_key, value = next(itr)
@@ -276,7 +276,7 @@ class MinisqlFacade:
                     RecordManager.delete(table_name,
                                     metadata.tables[table_name].fmt,
                                     with_index=True,
-                                    record_offset=value-1)
+                                    record_offset=value)
                     manager.delete(it_key[0])
             elif operator == '<':
                 for i in manager.iter_leaves():
@@ -285,7 +285,7 @@ class MinisqlFacade:
                         RecordManager.delete(table_name,
                                     metadata.tables[table_name].fmt,
                                     with_index=True,
-                                    record_offset=value-1)
+                                    record_offset=value)
                         manager.delete(it_key[0])
                     else:
                         break
@@ -319,7 +319,7 @@ class MinisqlFacade:
                     RecordManager.delete(table_name,
                                         metadata.tables[table_name].fmt,
                                         with_index=1,
-                                        record_offset=value-1)
+                                        record_offset=value)
 
             #each tuple has its PRIMARY KEY index
             #actually only support single attribute index
