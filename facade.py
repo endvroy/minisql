@@ -333,11 +333,11 @@ class MinisqlFacade:
     def drop_table(table_name):
         metadata = load_metadata()
         buffer_manager = BufferManager()
-        metadata.drop_table(table_name)
         shutil.rmtree('schema/tables/' + table_name + '/', True)
         buffer_manager.detach_from_file('schema/tables/' + table_name + '/' + table_name + '.table')
         for index_name in metadata.tables[table_name].indexes:
             buffer_manager.detach_from_file('schema/tables/' + table_name + '/' + index_name + '.index')
+        metadata.drop_table(table_name)
         metadata.dump()
 
     @staticmethod
