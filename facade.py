@@ -20,7 +20,6 @@ class MinisqlFacade:
         os.makedirs('schema/tables/' + table_name, exist_ok=True)
         metadata = load_metadata()  # PK can be set on only one attribute
         columns_lst = []
-        print(columns)
         for column in columns:
             # generate the fmt for this column
             if column[1][0] == 'char':
@@ -39,7 +38,15 @@ class MinisqlFacade:
     def insert_record(table_name, attributes):
         RecordManager.set_file_dir('schema/tables/' + table_name + '/')
         metadata = load_metadata()
-        position = RecordManager.insert(table_name, metadata.tables[table_name].fmt, tuple(attributes))
+        primary_index_path = 'schema/tables/' + table_name + '/PRIMARY.index'
+        primary_manager = IndexManager(primary_index_path, metadata.tables[table_name].primary_key_fmt)
+        print(attributes[metadata.tables[table_name].primary_key_offset], type(attributes[metadata.tables[table_name].primary_key_offset]))
+        print(metadata.tables[table_name].primary_key_fmt)
+        print(primary_manager.find(attributes[metadata.tables[table_name].primary_key_offset]))
+        if primary_manager.find(attributes[metadata.tables[table_name].primary_key_offset]):
+            raise ValueError('cannot insert two records with the same primary key.')
+        else:
+            position = RecordManager.insert(table_name, metadata.tables[table_name].fmt, tuple(attributes))
         for index_name, index in metadata.tables[table_name].indexes.items():
             file_path = RecordManager.file_dir + index_name + '.index'
             fmt = ''.join(metadata.tables[table_name].columns[column].fmt for column in index.columns)
@@ -47,6 +54,7 @@ class MinisqlFacade:
             key_pos = list(metadata.tables[table_name].columns.keys()).index(index.columns[0])
             key_list = list()
             key_list.append(attributes[key_pos])
+            print(key_list)
             manager.insert(key_list, position)  # index can be set on single attribute
             manager.dump_header()
 
@@ -74,9 +82,9 @@ class MinisqlFacade:
     def select_record_all(table_name):
         metadata = load_metadata()
         RecordManager.set_file_dir('schema/tables/' + table_name + '/')
-        print(metadata.tables[table_name].fmt)
         records = RecordManager.select(table_name, metadata.tables[table_name].fmt, with_index=False, conditions={})
-        return records
+        columns = list(metadata.tables[table_name].columns.keys())
+        return records, columns
 
     @staticmethod
     def delete_record_all(table_name):
