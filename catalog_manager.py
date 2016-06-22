@@ -27,8 +27,6 @@ class Table:
         self.columns = OrderedDict()
         self.indexes = {}
         self.fmt = '<'
-        self.primary_key_fmt = '<'
-        self.primary_key_offset = -1
 
     def add_column(self, column):
         self.columns[column.name] = column
@@ -71,12 +69,10 @@ class Metadata:
 
         table = Table(table_name)
         primary_keys = []
-        for pos, column in enumerate(columns):
+        for column in columns:
             table.add_column(column)
             if column.primary_key:
                 primary_keys.append(column.name)
-                table.primary_key_fmt += column.fmt
-                table.primary_key_offset = pos
 
         if not primary_keys:
             raise ValueError('primary key not specified')
