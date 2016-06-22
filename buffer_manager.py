@@ -63,6 +63,7 @@ class Block:
                     file.write(self._memory[:self.effective_bytes])
                     file.flush()
                 self.dirty = False
+                self.last_accessed_time = datetime.now()
             except FileNotFoundError:
                 pass  # suppress this exception
                 # based on the assumption that the file won't magically disappear
@@ -72,7 +73,6 @@ class Block:
                 # and this flush is most likely to occur when the buffer manager invokes flush_all()
                 # or tries to swap out this block
                 # in either case, it will be the end of the life cycle of this block
-        self.last_accessed_time = datetime.now()
 
     def pin(self):
         """pin this block so that it cannot be released"""
@@ -133,6 +133,13 @@ class BufferManager(Singleton):
                 block = Block(self.block_size, abs_path, block_offset)
                 self._blocks[(abs_path, block_offset)] = block
                 return block
+
+    def detach_from_file(self, file_path):
+        """delete all cached blocks associated with the given file"""
+        abs_path = os.path.abspath(file_path)
+        for key in list(self._blocks):
+            if key[0] == abs_path:
+                del self._blocks[key]
 
     def flush_all(self):
         for block in self._blocks.values():

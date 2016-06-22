@@ -124,6 +124,12 @@ class TestBufferManager(unittest.TestCase):
         import tests.buffer_import_a, tests.buffer_import_b
         self.assertTrue(tests.buffer_import_a.manager is tests.buffer_import_b.manager)
 
+    def test_detach(self):
+        manager = BufferManager()
+        manager.get_file_block('foo', 0)
+        manager.detach_from_file('foo')
+        self.assertFalse(manager._blocks)
+
 
 if __name__ == '__main__':
     unittest.main()
