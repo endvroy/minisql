@@ -366,15 +366,15 @@ class TestIndexManager(unittest.TestCase):
 
     def test_find_from_empty(self):
         manager = IndexManager('spam', '<id')
-        result = manager.find([23, 3])
-        self.assertEqual(result, None)
+        with self.assertRaises(RuntimeError):
+            manager.find([23, 3])
 
     def test_find_not_exists(self):
         manager = IndexManager('spam', '<id')
         manager.insert([42, 7.6], 518)
         manager.insert([233, 66.6], 7)
         result = manager.find([233, 7.6])
-        self.assertEqual(result, None)
+        self.assertEqual(next(result), ((233, 66.6), 7))
 
     def test_delete_from_empty(self):
         manager = IndexManager('spam', '<id')

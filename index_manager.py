@@ -373,21 +373,20 @@ class IndexManager:
                 self._handle_underflow(parent, parent_block, path_to_parents)
 
     def find(self, key):
-        """find the value corresponding to key and return it
-        if no such value exists, return None"""
+        """find the smallest key >= (parameter) key
+        return an iterator from this position
+        raise RuntimeError if the index is empty"""
         key = _convert_to_tuple(key)
         if self.root == 0:
-            return None
+            raise RuntimeError('cannot find from empty index')
         else:
             node, node_block, path_to_parents = self._find_first_leaf(key)
             key_position = bisect.bisect_left(node.keys, key)
-            if key_position < len(node.keys) and node.keys[key_position] == key:
-                return LeafIterator(self.Node, self.index_file_path, node, key_position)
-            else:
-                return None
+            return LeafIterator(self.Node, self.index_file_path, node, key_position)
 
     def insert(self, key, value):
-        """insert a key-value pair into the index file"""
+        """insert a key-value pair into the index file
+        if key already in this index, raise ValueError"""
         key = _convert_to_tuple(key)
         if self.root == 0:
             block = self._get_free_block()
@@ -431,6 +430,7 @@ class IndexManager:
                 raise ValueError('index has no such key {}'.format(key))
 
     def iter_leaves(self):
+        """return an iterator at the beginning of the leaf node chain"""
         if self.first_leaf == 0:
             raise RuntimeError('can\'t iter from empty index')
         first_leaf_block = self._manager.get_file_block(self.index_file_path, self.first_leaf)
