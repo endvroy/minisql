@@ -140,17 +140,6 @@ def p_select_statement(p):
                         | conditional_select
     '''
     type_code = p[1]['type']
-<<<<<<< HEAD
-    if type_code == 'select_all':
-        print('in select all')
-        result = MinisqlFacade.select_record_all(p[1]['table_name'])
-        print('result of select all:', result)
-    elif type_code == 'conditional_select':
-        print('in conditional select')
-        result = MinisqlFacade.select_record_conditionally(p[1]['table_name'], p[1]['conditions'])
-        print('result of select conditionally:', result)
-        # todo : call the api to select with conditions
-=======
     try:
         columns = MinisqlFacade.get_columns_name(p[1]['table_name'])
         columns_format = ' | '.join(column for column in columns)
@@ -166,7 +155,6 @@ def p_select_statement(p):
             print(record_str)
     except KeyError:
         print('Error! The table {} is not exist!'.format(p[1]['table_name']))
->>>>>>> origin/master
 
 
 def p_delete_statement(p):
@@ -181,13 +169,7 @@ def p_delete_statement(p):
         except Exception as ex:
             print('Error! ', ex)
     elif type_code == 'conditional_delete':
-<<<<<<< HEAD
-        print('in conditional delete')
         MinisqlFacade.delete_record_conditionally(p[1]['table_name'], p[1]['conditions'])
-        # todo : call the api to delete with conditions
-=======
-        MinisqlFacade.delete_record_conditionally(p[1]['table_name'], p[1]['conditions'])
->>>>>>> origin/master
 
 
 def p_drop_statement(p):
@@ -197,26 +179,16 @@ def p_drop_statement(p):
     '''
     type_code = p[1]['type']
     if type_code == 'drop_table':
-<<<<<<< HEAD
-        print('in drop table')
-=======
->>>>>>> origin/master
         try:
             MinisqlFacade.drop_table(p[1]['table_name'])
         except ValueError as ex:
             print('Error! ', ex)
     elif type_code == 'drop_index':
-<<<<<<< HEAD
-        print('in drop index')
-        MinisqlFacade.drop_index(p[1]['index_name'])
-        # todo: call the api to drop the specified index
-=======
         try:
             MinisqlFacade.drop_index(p[1]['index_name'])
         except Exception as ex:
             print('Error! ', ex)
 
->>>>>>> origin/master
 
 
 def p_quit_statement(p):
