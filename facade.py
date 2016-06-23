@@ -101,16 +101,29 @@ class MinisqlFacade:
         return records
 
     @staticmethod
+    def _delete_stupid_index(record, table_name):
+        metadata = load_metadata()
+        for index_name, index in metadata.tables[table_name].indexes.items():
+            key_pos = list(metadata.tables[table_name].columns.keys()).index(index.columns[0])
+            attribute_name = index.columns[0]
+            key_list = list()
+            key_list.append(record[key_pos])
+            file_path = RecordManager.file_dir + index_name + '.index'
+            fmt = metadata.tables[table_name].columns[attribute_name].fmt
+            in_manager = IndexManager(file_path, fmt)
+            in_manager.delete(key_list)
+
+    @staticmethod
     def delete_record_all(table_name):
         RecordManager.set_file_dir('schema/tables/' + table_name + '/')
-        buffer_manager = BufferManager()
         metadata = load_metadata()
         RecordManager.delete(table_name, metadata.tables[table_name].fmt, with_index=False, conditions={})
-        for index in metadata.tables[table_name].indexes:
-            # os.remove(index_file_path)
-            # todo: still need to delete index associated with deleted records, but not
-            # remove the index file.
-            buffer_manager.detach_from_file('schema/tables/' + table_name + '/' + index + '.index')
+        for index_name, index in metadata.tables[table_name].indexes.items():
+            file_path = RecordManager.file_dir + index_name + '.index'
+            fmt = ''.join(metadata.tables[table_name].columns[column].fmt for column in index.columns)
+            manager = IndexManager(file_path, fmt)
+            for i in manager.iter_leaves():
+                manager.delete(i[0][0])
 
     @staticmethod
     def _convert_conditions(table_name, condition):
@@ -154,23 +167,25 @@ class MinisqlFacade:
     def delete_record_conditionally_without_index(table_name, condition):
         metadata = load_metadata()
         condition_convert = MinisqlFacade._convert_conditions(table_name, condition)
+        records = RecordManager.select(table_name,metadata.tables[table_name].fmt, with_index=False,
+                             conditions=condition_convert)
+        for record in records:
+            MinisqlFacade._delete_stupid_index(record,table_name)
         RecordManager.delete(table_name, metadata.tables[table_name].fmt, with_index=False,
                              conditions=condition_convert)
 
     @staticmethod
-    def _has_index(attribute_name, table_name, key):
+    def _has_index(attribute_name, table_name):
         metadata = load_metadata()
         for index_name, index in metadata.tables[table_name].indexes.items():
             if attribute_name in index.columns:
-                key_list = list()
-                key_list.append(key)
-                file_path = RecordManager.file_dir + index_name + '.index'  #
+                file_path = RecordManager.file_dir + index_name + '.index'
                 fmt = metadata.tables[table_name].columns[attribute_name].fmt
                 manager = IndexManager(file_path, fmt)
-                itr = manager.find(key_list)
-                if itr:
+                try:
+                    manager.iter_leaves()
                     return index_name
-                else:
+                except RuntimeError:
                     pass
             else:
                 pass
@@ -179,7 +194,7 @@ class MinisqlFacade:
     @staticmethod
     def _select_single_condition(table_name, condition):
         metadata = load_metadata()
-        index_name = MinisqlFacade._has_index(condition[0], table_name, condition[2])
+        index_name = MinisqlFacade._has_index(condition[0], table_name)
         if index_name:
             print('select with index on ', condition[0])
             attribute_name = condition[0]
@@ -189,27 +204,29 @@ class MinisqlFacade:
             file_path = RecordManager.file_dir + index_name + '.index'  #
             fmt = metadata.tables[table_name].columns[attribute_name].fmt
             manager = IndexManager(file_path, fmt)
-            itr = manager.find(key_list)
-            it_key, value = next(itr)
             records = list()
             if operator == '=':
-                records.append(RecordManager.select(table_name,
-                                                    metadata.tables[table_name].fmt,
-                                                    with_index=True,
-                                                    record_offset=value))
+                try:
+                    itr = manager.find(key_list)
+                    it_key, value = next(itr)
+                    if it_key[0] == key_list[0]:
+                        records.append(RecordManager.select(table_name,
+                                                            metadata.tables[table_name].fmt,
+                                                            with_index=True,
+                                                            record_offset=value))
+                except StopIteration:
+                    pass
             elif operator == '>':
-                it_key, value = next(itr)
-                key_list = list()
-                key_list.append(it_key[0])
                 for i in manager.find(key_list):
-                    value = i[1]
-                    records.append(RecordManager.select(table_name,
-                                                        metadata.tables[table_name].fmt,
-                                                        with_index=True,
-                                                        record_offset=value))
+                    if i[0][0] > key_list[0]:
+                        value = i[1]
+                        records.append(RecordManager.select(table_name,
+                                                            metadata.tables[table_name].fmt,
+                                                            with_index=True,
+                                                            record_offset=value))
             elif operator == '<':
                 for i in manager.iter_leaves():
-                    if i[0] != it_key:
+                    if i[0][0] < key_list[0]:
                         value = i[1]
                         records.append(RecordManager.select(table_name,
                                                             metadata.tables[table_name].fmt,
@@ -248,7 +265,7 @@ class MinisqlFacade:
     @staticmethod
     def _delete_single_condition(table_name, condition):
         metadata = load_metadata()
-        index_name = MinisqlFacade._has_index(condition[0], table_name, condition[2])
+        index_name = MinisqlFacade._has_index(condition[0], table_name)
         if index_name:
             print('delete with index on ', condition[0])
             attribute_name = condition[0]
@@ -258,34 +275,39 @@ class MinisqlFacade:
             file_path = RecordManager.file_dir + index_name + '.index'  #
             fmt = metadata.tables[table_name].columns[attribute_name].fmt
             manager = IndexManager(file_path, fmt)
-            itr = manager.find(key_list)
-            it_key, value = next(itr)
             if operator == '=':
-                RecordManager.delete(table_name,
-                                     metadata.tables[table_name].fmt,
-                                     with_index=True,
-                                     record_offset=value)
-                manager.delete(key_list)
+                try:
+                    itr = manager.find(key_list)
+                    it_key, value = next(itr)
+                    record = RecordManager.select(table_name,metadata.tables[table_name].fmt,with_index=True,record_offset=value)
+                    if it_key[0] == key_list[0]:
+                        MinisqlFacade._delete_stupid_index(record,table_name)
+                        RecordManager.delete(table_name,
+                                            metadata.tables[table_name].fmt,
+                                            with_index=True,
+                                            record_offset=value)
+                except StopIteration:
+                    pass
             elif operator == '>':
-                it_key, value = next(itr)
-                key_list = list()
-                key_list.append(it_key[0])
                 for i in manager.find(key_list):
-                    value = i[1]
-                    RecordManager.delete(table_name,
-                                         metadata.tables[table_name].fmt,
-                                         with_index=True,
-                                         record_offset=value)
-                    manager.delete(it_key[0])
-            elif operator == '<':
-                for i in manager.iter_leaves():
-                    if i[0] != it_key:
+                    if i[0][0] > key_list[0]:
                         value = i[1]
+                        record = RecordManager.select(table_name,metadata.tables[table_name].fmt,with_index=True,record_offset=value)
+                        MinisqlFacade._delete_stupid_index(record,table_name)
                         RecordManager.delete(table_name,
                                              metadata.tables[table_name].fmt,
                                              with_index=True,
                                              record_offset=value)
-                        manager.delete(it_key[0])
+            elif operator == '<':
+                for i in manager.iter_leaves():
+                    if i[0][0] < key_list[0]:
+                        value = i[1]
+                        record = RecordManager.select(table_name,metadata.tables[table_name].fmt,with_index=True,record_offset=value)
+                        MinisqlFacade._delete_stupid_index(record,table_name)
+                        RecordManager.delete(table_name,
+                                             metadata.tables[table_name].fmt,
+                                             with_index=True,
+                                             record_offset=value)
                     else:
                         break
             manager.dump_header()
@@ -332,21 +354,20 @@ class MinisqlFacade:
     @staticmethod
     def drop_table(table_name):
         metadata = load_metadata()
-        buffer_manager = BufferManager()
-        shutil.rmtree('schema/tables/' + table_name + '/', True)
-        buffer_manager.detach_from_file('schema/tables/' + table_name + '/' + table_name + '.table')
-        for index_name in metadata.tables[table_name].indexes:
-            buffer_manager.detach_from_file('schema/tables/' + table_name + '/' + index_name + '.index')
+        MinisqlFacade.delete_record_all(table_name)
         metadata.drop_table(table_name)
         metadata.dump()
+        shutil.rmtree('schema/tables/' + table_name + '/', True)
 
     @staticmethod
     def drop_index(index_name):
         metadata = load_metadata()
-        buffer_manager = BufferManager()
         for table_name, table in metadata.tables.items():
             if index_name in table.indexes:
                 metadata.drop_index(table_name, index_name)
-                os.remove('schema/tables/' + table_name + '/' + index_name + '.index')
-                buffer_manager.detach_from_file('schema/tables/' + table_name + '/' + index_name + '.index')
+                file_path = RecordManager.file_dir + index_name + '.index'
+                fmt = ''.join(metadata.tables[table_name].columns[column].fmt for column in table.indexes[index_name].columns)
+                manager = IndexManager(file_path, fmt)
+                for i in manager.iter_leaves():
+                    manager.delete(i[0][0])
         metadata.dump()
