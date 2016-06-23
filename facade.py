@@ -122,8 +122,15 @@ class MinisqlFacade:
             file_path = RecordManager.file_dir + index_name + '.index'
             fmt = ''.join(metadata.tables[table_name].columns[column].fmt for column in index.columns)
             manager = IndexManager(file_path, fmt)
-            for i in manager.iter_leaves():
-                manager.delete(i[0][0])
+            try:
+                for i in manager.iter_leaves():
+                    key_list = list()
+                    key_list.append(i[0][0])
+                    manager.delete(key_list)
+            except RuntimeError:
+                pass
+
+
 
     @staticmethod
     def _convert_conditions(table_name, condition):
@@ -364,10 +371,15 @@ class MinisqlFacade:
         metadata = load_metadata()
         for table_name, table in metadata.tables.items():
             if index_name in table.indexes:
-                metadata.drop_index(table_name, index_name)
-                file_path = RecordManager.file_dir + index_name + '.index'
+                file_path = 'schema/tables/' + table_name + '/' + index_name + '.index'
                 fmt = ''.join(metadata.tables[table_name].columns[column].fmt for column in table.indexes[index_name].columns)
                 manager = IndexManager(file_path, fmt)
-                for i in manager.iter_leaves():
-                    manager.delete(i[0][0])
+                metadata.drop_index(table_name, index_name)
+                try:
+                    for i in manager.iter_leaves():
+                        key_list = list()
+                        key_list.append(i[0][0])
+                        manager.delete(key_list)
+                except RuntimeError:
+                    pass
         metadata.dump()

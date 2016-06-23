@@ -138,6 +138,7 @@ def p_insert_statement(p):
         print('Insertion failed.')
         print('Error message:  ', ex)
 
+
 def p_select_statement(p):
     '''
         select_statement : select_all
@@ -406,7 +407,7 @@ def p_execute_statement(p):
         filename = p[2]
     else:
         filename = p[2] + '.' + p[4]
-    file_path = os.path.abspath('./scripts/' + filename)
+    file_path = './scripts/' + filename
     with open(file_path, 'r') as file:
         lines = (line.strip() for line in file.readlines())
         sql = ''
