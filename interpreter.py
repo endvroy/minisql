@@ -1,12 +1,12 @@
 import ply.lex as lex
 import ply.yacc as yacc
 from facade import MinisqlFacade
-import sys
+import sys, os
 
 reserved = (
     'SELECT', 'CREATE', 'INSERT', 'DELETE', 'DROP', 'TABLE', 'PRIMARY', 'KEY',
     'UNIQUE', 'INT', 'CHAR', 'FLOAT', 'ON', 'FROM', 'QUIT', 'VALUES', 'INTO',
-    'INDEX', 'WHERE', 'AND', 'OR',
+    'INDEX', 'WHERE', 'AND', 'OR', 'EXECUTE',
 )
 
 tokens = reserved + \
@@ -15,7 +15,7 @@ tokens = reserved + \
              'ID',
 
              # Delimeters
-             'COMMA', 'LPAREN', 'RPAREN', 'SEMICOLON',
+             'COMMA', 'LPAREN', 'RPAREN', 'SEMICOLON', 'DOT',
 
              # Operation
              'LT', 'GT', 'LE', 'GE', 'EQ', 'NE',
@@ -38,6 +38,7 @@ t_COMMA = ','
 t_LPAREN = '\('
 t_RPAREN = '\)'
 t_SEMICOLON = ';'
+t_DOT = '\.'
 
 # Operators
 t_LT = r'<'
@@ -99,6 +100,7 @@ def p_sql_statement(p):
                         | delete_statement
                         | drop_statement
                         | quit_statement
+                        | execute_statement
     '''
     pass
 
@@ -117,7 +119,6 @@ def p_create_statement(p):
                 MinisqlFacade.create_table(p[1]['table_name'], p[1]['primary key'], p[1]['element_list'])
             else:
                 MinisqlFacade.create_table(p[1]['table_name'], None, p[1]['element_list'])
-            print('Table {} is created.'.format(p[1]['table_name']))
         except ValueError as value_error:
             print('Error! {}'.format(value_error))
 
@@ -130,9 +131,12 @@ def p_insert_statement(p):
     value_list = p[6]
     try:
         MinisqlFacade.insert_record(table_name, value_list)
+    except KeyError as key_error:
+        print('Insertion failed.')
+        print('Error message: No table {}'.format(key_error))
     except Exception as ex:
         print('Insertion failed.')
-        print('Error message: ', ex)
+        print('Error message:  ', ex)
 
 def p_select_statement(p):
     '''
@@ -145,11 +149,11 @@ def p_select_statement(p):
         columns_format = ' | '.join(column for column in columns)
         if type_code == 'select_all':
             records = MinisqlFacade.select_record_all(p[1]['table_name'])
-        else: # conditional select
+        else:  # conditional select
             records = MinisqlFacade.select_record_conditionally(p[1]['table_name'], p[1]['conditions'])
-        print('*****'*len(columns))
+        print('*****' * len(columns))
         print(columns_format)
-        print('*****'*len(columns))
+        print('*****' * len(columns))
         for record in records:
             record_str = ' | '.join(str(item) for item in record)
             print(record_str)
@@ -181,14 +185,15 @@ def p_drop_statement(p):
     if type_code == 'drop_table':
         try:
             MinisqlFacade.drop_table(p[1]['table_name'])
-        except ValueError as ex:
-            print('Error! ', ex)
+        except ValueError as value_error:
+            print('Error! ', value_error)
+        except KeyError:
+            print('Error! There is no table {}.'.format(p[1]['table_name']))
     elif type_code == 'drop_index':
         try:
             MinisqlFacade.drop_index(p[1]['index_name'])
         except Exception as ex:
             print('Error! ', ex)
-
 
 
 def p_quit_statement(p):
@@ -392,6 +397,28 @@ def p_drop_index(p):
     p[0] = dict
 
 
+def p_execute_statement(p):
+    '''
+        execute_statement : EXECUTE ID SEMICOLON
+                            | EXECUTE ID DOT ID SEMICOLON
+    '''
+    if len(p) == 4:
+        filename = p[2]
+    else:
+        filename = p[2] + '.' + p[4]
+    file_path = os.path.abspath('./scripts/' + filename)
+    with open(file_path, 'r') as file:
+        lines = (line.strip() for line in file.readlines())
+        sql = ''
+        for line in lines:
+            if line.rstrip().endswith(';'):
+                sql += ' ' + line
+                parser.parse(sql)
+                sql = ''
+            else:
+                sql += ' ' + line
+
+
 # Others
 def p_error(p):
     print('Syntax error!')
@@ -400,10 +427,21 @@ def p_error(p):
 parser = yacc.yacc(method='LALR')
 
 
+# End of Lexer and Parser
+
+def cmd_get_sql():
+    sql = ''
+    s = input('MiniSQL>  ')
+    while True:
+        if s.rstrip().endswith(';'):
+            sql += ' ' + s
+            return sql
+        else:
+            sql += ' ' + s
+            s = input()
+
+
 if __name__ == '__main__':
     while True:
-        try:
-            s = input('MiniSQL>  ')
-        except EOFError:
-            break
-        parser.parse(s)
+        sql = cmd_get_sql()
+        parser.parse(sql)
