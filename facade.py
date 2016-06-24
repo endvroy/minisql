@@ -1,6 +1,6 @@
 from index_manager import IndexManager
 from record_manager import RecordManager
-from catalog_manager import Metadata, init, load_metadata, Column
+from catalog_manager import load_metadata, Column
 from buffer_manager import BufferManager
 
 import os
@@ -130,8 +130,6 @@ class MinisqlFacade:
             except RuntimeError:
                 pass
 
-
-
     @staticmethod
     def _convert_conditions(table_name, condition):
         metadata = load_metadata()
@@ -174,10 +172,10 @@ class MinisqlFacade:
     def delete_record_conditionally_without_index(table_name, condition):
         metadata = load_metadata()
         condition_convert = MinisqlFacade._convert_conditions(table_name, condition)
-        records = RecordManager.select(table_name,metadata.tables[table_name].fmt, with_index=False,
-                             conditions=condition_convert)
+        records = RecordManager.select(table_name, metadata.tables[table_name].fmt, with_index=False,
+                                       conditions=condition_convert)
         for record in records:
-            MinisqlFacade._delete_stupid_index(record,table_name)
+            MinisqlFacade._delete_stupid_index(record, table_name)
         RecordManager.delete(table_name, metadata.tables[table_name].fmt, with_index=False,
                              conditions=condition_convert)
 
@@ -286,21 +284,23 @@ class MinisqlFacade:
                 try:
                     itr = manager.find(key_list)
                     it_key, value = next(itr)
-                    record = RecordManager.select(table_name,metadata.tables[table_name].fmt,with_index=True,record_offset=value)
+                    record = RecordManager.select(table_name, metadata.tables[table_name].fmt, with_index=True,
+                                                  record_offset=value)
                     if it_key[0] == key_list[0]:
-                        MinisqlFacade._delete_stupid_index(record,table_name)
+                        MinisqlFacade._delete_stupid_index(record, table_name)
                         RecordManager.delete(table_name,
-                                            metadata.tables[table_name].fmt,
-                                            with_index=True,
-                                            record_offset=value)
+                                             metadata.tables[table_name].fmt,
+                                             with_index=True,
+                                             record_offset=value)
                 except StopIteration:
                     pass
             elif operator == '>':
                 for i in manager.find(key_list):
                     if i[0][0] > key_list[0]:
                         value = i[1]
-                        record = RecordManager.select(table_name,metadata.tables[table_name].fmt,with_index=True,record_offset=value)
-                        MinisqlFacade._delete_stupid_index(record,table_name)
+                        record = RecordManager.select(table_name, metadata.tables[table_name].fmt, with_index=True,
+                                                      record_offset=value)
+                        MinisqlFacade._delete_stupid_index(record, table_name)
                         RecordManager.delete(table_name,
                                              metadata.tables[table_name].fmt,
                                              with_index=True,
@@ -309,8 +309,9 @@ class MinisqlFacade:
                 for i in manager.iter_leaves():
                     if i[0][0] < key_list[0]:
                         value = i[1]
-                        record = RecordManager.select(table_name,metadata.tables[table_name].fmt,with_index=True,record_offset=value)
-                        MinisqlFacade._delete_stupid_index(record,table_name)
+                        record = RecordManager.select(table_name, metadata.tables[table_name].fmt, with_index=True,
+                                                      record_offset=value)
+                        MinisqlFacade._delete_stupid_index(record, table_name)
                         RecordManager.delete(table_name,
                                              metadata.tables[table_name].fmt,
                                              with_index=True,
@@ -361,10 +362,14 @@ class MinisqlFacade:
     @staticmethod
     def drop_table(table_name):
         metadata = load_metadata()
+        buffer_manager = BufferManager()
         MinisqlFacade.delete_record_all(table_name)
+        shutil.rmtree('schema/tables/' + table_name + '/', True)
+        buffer_manager.detach_from_file('schema/tables/' + table_name + '/' + table_name + '.table')
+        for index_name in metadata.tables[table_name].indexes:
+            buffer_manager.detach_from_file('schema/tables/' + table_name + '/' + index_name + '.index')
         metadata.drop_table(table_name)
         metadata.dump()
-        shutil.rmtree('schema/tables/' + table_name + '/', True)
 
     @staticmethod
     def drop_index(index_name):
@@ -372,7 +377,8 @@ class MinisqlFacade:
         for table_name, table in metadata.tables.items():
             if index_name in table.indexes:
                 file_path = 'schema/tables/' + table_name + '/' + index_name + '.index'
-                fmt = ''.join(metadata.tables[table_name].columns[column].fmt for column in table.indexes[index_name].columns)
+                fmt = ''.join(
+                    metadata.tables[table_name].columns[column].fmt for column in table.indexes[index_name].columns)
                 manager = IndexManager(file_path, fmt)
                 metadata.drop_index(table_name, index_name)
                 try:
