@@ -289,7 +289,7 @@ class IndexManager:
                 block.write(bytes(node))
                 new_block.write(bytes(new_node))
             parent_block = self._manager.get_file_block(self.index_file_path, parent_offset)
-            parent_node = self.Node.frombytes(parent_block)
+            parent_node = self.Node.frombytes(parent_block.read())
             parent_node.insert(key, value)
             if len(parent_node.keys) <= self.Node.n:
                 with pin(parent_block):
