@@ -175,7 +175,7 @@ def node_factory(fmt):
                 self.children.insert(0, other.children.pop())
                 parent.keys[divide_point] = other.keys.pop()
             else:
-                raise ValueError('cannot transfer within leaf nodes and internal nodes')
+                raise ValueError('cannot transfer between leaf nodes and internal nodes')
 
         def transfer_from_right(self, other, parent, divide_point):
             if self.is_leaf and other.is_leaf:
@@ -187,7 +187,7 @@ def node_factory(fmt):
                 self.children.append(other.children.pop(0))
                 parent.keys[divide_point] = other.keys.pop(0)
             else:
-                raise ValueError('cannot transfer within leaf nodes and internal nodes')
+                raise ValueError('cannot transfer between leaf nodes and internal nodes')
 
     return Node
 
@@ -249,7 +249,7 @@ class IndexManager:
             block.write(bytes(node))
             self.first_deleted_block = block.block_offset
 
-    def _find_first_leaf(self, key):
+    def _find_leaf(self, key):
         """find the first leaf node where key may reside
         key may not really reside in this node, in this case, the index file has no such key"""
         key = _convert_to_tuple(key)
@@ -380,7 +380,7 @@ class IndexManager:
         if self.root == 0:
             raise RuntimeError('cannot find from empty index')
         else:
-            node, node_block, path_to_parents = self._find_first_leaf(key)
+            node, node_block, path_to_parents = self._find_leaf(key)
             key_position = bisect.bisect_left(node.keys, key)
             return LeafIterator(self.Node, self.index_file_path, node, key_position)
 
@@ -398,7 +398,7 @@ class IndexManager:
                                  children=[value, 0])
                 block.write(bytes(node))
         else:
-            node, node_block, path_to_parents = self._find_first_leaf(key)
+            node, node_block, path_to_parents = self._find_leaf(key)
             key_position = bisect.bisect_left(node.keys, key)
             if key_position < len(node.keys) and node.keys[key_position] == key:
                 raise ValueError('duplicate key {}'.format(key))
@@ -416,7 +416,7 @@ class IndexManager:
         if self.root == 0:
             raise ValueError('can\'t delete from empty index')
         else:
-            node, node_block, path_to_parents = self._find_first_leaf(key)
+            node, node_block, path_to_parents = self._find_leaf(key)
             key_position = bisect.bisect_left(node.keys, key)
             if key_position < len(node.keys) and node.keys[key_position] == key:  # key match
                 del node.keys[key_position]
